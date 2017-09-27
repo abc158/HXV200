@@ -1,0 +1,1075 @@
+###############################################################################
+#
+# IAR ANSI C/C++ Compiler V7.30.4.8167/W32 for ARM        25/Sep/2017  09:03:51
+# Copyright 1999-2014 IAR Systems AB.
+#
+#    Cpu mode     =  thumb
+#    Endian       =  little
+#    Source file  =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\src\ui-manager\test_cmd_handle.c
+#    Command line =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\src\ui-manager\test_cmd_handle.c
+#        -lcN F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\List\
+#        --diag_error PE223 -o
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\Obj\ --debug
+#        --endian=little --cpu=Cortex-M3 -e --fpu=None --dlib_config
+#        "D:\Program Files (x86)\IAR Systems\Embedded Workbench
+#        7.0\arm\INC\c\DLib_Config_Normal.h" --preinclude
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\lib\syscall_api.h -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\includes\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\includes\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\lib\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\local_process\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\cfg\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\dock\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\guardrail\ -Ohz
+#    List file    =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\List\test_cmd_handle.lst
+#    Object file  =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\Obj\test_cmd_handle.o
+#
+###############################################################################
+
+F:\海尔\新版+8k解码+预约+去掉多余代码\src\ui-manager\test_cmd_handle.c
+      1          #include "stdio.h"
+      2          #include "stdlib.h"
+      3          #include "string.h"
+      4          #include "am_type.h"
+      5          #include "am_robot_type.h"
+      6          #include "syscall_api.h"
+      7          #include "ui-test_cmd_handle.h"
+      8          #include "am_key.h"
+      9          #include "ui-commands.h"
+     10          #include "sensor/sensor.h"
+     11          #include "ui-ir.h"
+     12          #include "docking-new.h"
+     13          #include "charge/charge.h"
+     14          #include "syscall_api.h"
+     15          #include "cfg/adc_chan.h"
+     16          #include "sensor/sensor.h"
+     17          #include "am_config_macro.h"
+     18          #include "motor/robot_brush.h"
+     19          #include "motor/robot_suction.h"
+     20          #include "util/current.h"
+     21          #include "ui-song-player.h"
+     22          //-30 -25 -20 -15 -10 -5 0 5 10 15 20 25 30 35 40 45 50
+     23          const char temp_list[]={148,117,92,71,54,42,32,25,20,15,12,10,8,6,5,4,3};
+     24          
+     25          /*测试项,如果测试顺序调整,改变这个数组的的测试命令顺序即可*/
+     26          TEST_CMD_E test_item_table[UI_TEST_ITEM_MAX]={CMD_TEST_BUMP_DROP, CMD_TEST_CLIFF_LIGHTTOUCH,
+     27          	                                            CMD_TEST_ALL_IR, CMD_BAT,
+     28          	                                            CMD_TEST_ALL_CHARGE_MODE, CMD_DOCK_CURRENT,
+     29          	                                            CMD_WHEEL_L_FORWARD, CMD_WHEEL_R_FORWARD,
+     30          	                                            CMD_WHEEL_L_REV_SPD, CMD_WHEEL_R_REV_SPD,
+     31          	                                            CMD_MAIN_FORWARD, CMD_MAIN_REV,
+     32          	                                            CMD_SIDE_FORWARD, CMD_SIDE_REV,
+     33          	                                            CMD_VACCUM};
+     34          
+     35          static volatile int self_test_result;   /*测试结果*/
+     36          static BumpState bump_state;            /*碰撞状态*/
+     37          static U8  wheel_test_event = 0;        /*轮子测试*/
+     38          static U8  other_motor_test = 0;        /*主刷,边刷,真空测试*/
+     39          static U8  cmd_stasis_test = 0;         /*是否万向轮测试*/
+     40          static U16 ui_test_num_last= 0;         /*上一次的测试命令*/
+     41          static U32 ui_test_last_ts = 0;         /*检测到红外的开始时间*/
+     42          static U32 test_result_dly = 0;         /*检测到红外的延时*/
+     43          static U32 stasis_state = 0;            /*万向轮状态*/
+     44          static U8  write_nvram_flag = 0;
+     45          static U32 ui_test_last_ts2[IR_DECODER_MAX] = {0};
+     46          
+     47          extern TEST_CMD_E ui_test_cmd;
+     48          extern void ir_test_all_result(void);
+     49          extern U8 get_ir_test(IR_REMOT_POSITION_E index);
+     50          
+     51          static u8 robot_is_near_hazard(u8 index)
+     52          {
+     53            return robot_is_cliff(index);
+     54          }
+     55          
+     56          static u8 robot_is_near_wall(u8 index)
+     57          {
+     58            return robot_is_lighttouch(index);
+     59          }
+     60          
+     61          
+     62          /****************************************************************
+     63          *Function   :  robot_wheel_drop_mask
+     64          *Description:  判断是否轮子抬起 
+     65          *Input      :  无            
+     66          *Output     :  无
+     67          *Return     :  轮子抬起状态
+     68          *Others     :  
+     69          ******************************************************************/
+     70          WheelDropState robot_wheel_drop_mask(void)
+     71          {
+     72              WheelDropState mask = WHEEL_DROP_STATE_NONE;
+     73              if (gpio_get_value(AM_IO_WHEEL_DROP_RIGHT)==0) {
+     74                  mask |= WHEEL_DROP_STATE_RIGHT;
+     75              }
+     76              if  (gpio_get_value(AM_IO_WHEEL_DROP_LEFT)==0) {
+     77                  mask |= WHEEL_DROP_STATE_LEFT;
+     78              }
+     79              return mask;
+     80          }
+     81          
+     82          /****************************************************************
+     83          *Function   :  robot_bump_mask
+     84          *Description:  判断是否有碰撞 
+     85          *Input      :  无            
+     86          *Output     :  无
+     87          *Return     :  碰撞状态
+     88          *Others     :  
+     89          ******************************************************************/
+     90          BumpState robot_bump_mask(void)
+     91          {
+     92              BumpState mask = BUMP_MASK_NONE;
+     93              //luyanjin modif
+     94              if (gpio_get_value(AM_IO_BUMP_LEFT)==1) {
+     95                  mask |= BUMP_FRONT_LEFT;
+     96                  //printf("mask BUMP_FRONT_LEFT\r\n");  
+     97              }
+     98              if  (gpio_get_value(AM_IO_BUMP_RIGHT)==1) {
+     99                  mask |= BUMP_FRONT_RIGHT;
+    100                  //printf("mask BUMP_FRONT_RIGHT\r\n");  
+    101              }  
+    102              
+    103           /*  
+    104             if (gpio_get_value(AM_IO_BUMP_LEFT)==0) {
+    105                  mask |= BUMP_FRONT_LEFT;
+    106              }
+    107              if  (gpio_get_value(AM_IO_BUMP_RIGHT)==0) {
+    108                  mask |= BUMP_FRONT_RIGHT;
+    109              }
+    110           */   
+    111             // printf("mask=%x\r\n",mask);   
+    112              return mask;
+    113          }
+    114          
+    115          /****************************************************************
+    116          *Function   :  get_bat_temp
+    117          *Description:  获取电池温度 
+    118          *Input      :  无            
+    119          *Output     :  无
+    120          *Return     :  电池温度
+    121          *Others     :  
+    122          ******************************************************************/
+    123          U8 get_bat_temp(void)
+    124          {
+    125              U8 i;
+    126              U16 temp_r;
+    127              temp_r = (U16)battery_temperature_get();
+    128              for(i=0;i<17;i++)
+    129              {
+    130                  if(temp_list[i]<temp_r)
+    131                      break;
+    132              }
+    133              if(i == 0)
+    134                  i = 1;
+    135              else
+    136                  i = i - 1;
+    137              if(i<6)
+    138                  return ((-5*(6-i))+30);
+    139              else
+    140                  return ((5*(i-6))+30);
+    141          }
+    142          
+    143          /****************************************************************
+    144          *Function   :  handle_test_cmd
+    145          *Description:  测试模式,处理每个测试项
+    146          *Input      :  U32 cmd:测试命令            
+    147          *Output     :  无
+    148          *Return     :  无
+    149          *Others     :  
+    150          ******************************************************************/
+    151          void handle_test_cmd(U32 cmd)
+    152          {
+    153              WheelDropState drop_mask ;
+    154              U8 tmp_state;
+    155              //S16 tmp_speed;
+    156              U16 tmp_test_result;
+    157              uint32_t tmp_value;
+    158              if(cmd != ui_test_num_last)
+    159              {
+    160                if(wheel_test_event)
+    161                {
+    162                    wheel_test_event = 0;
+    163                    set_motor_vels(0, 0, ACCELERATION_NON_EMERGENCY);
+    164                    //stop_motor_test(WHEEL_LEFT);
+    165                    //stop_motor_test(WHEEL_RIGHT);
+    166                }
+    167                if(other_motor_test)
+    168                {
+    169                    other_motor_test = 0;
+    170                    //stop_motor_test(MAIN_BRUSH);
+    171                    //stop_motor_test(SIDE_BRUSH);
+    172                    //stop_motor_test(SUCTION);
+    173                    robot_midbrush_vols_set(0);
+    174                    robot_sidebrush_vols_set(0);
+    175                    robot_suction_vols_set(0);
+    176                }
+    177                cmd_stasis_test = 0;
+    178              }
+    179              switch (cmd)
+    180              {
+    181              case CMD_TEST_WAIT:      // 0xf0000000,
+    182              {
+    183                  self_test_result = 0;
+    184                  break;
+    185              }
+    186              case CMD_BUMP_L:         // 0xf0000001, /*TURE OR FALSE*/
+    187              {
+    188                  bump_state = get_bump_state();
+    189                  self_test_result = (bump_state == BUMP_FRONT_LEFT)?1:0;
+    190                  break;
+    191              }
+    192              case CMD_BUMP_R:         // 0xf0000002, /*TURE OR FALSE*/
+    193              {
+    194                  bump_state = get_bump_state();
+    195                  self_test_result = (bump_state == BUMP_FRONT_RIGHT)?1:0;
+    196                  break;
+    197              }
+    198              case CMD_BUMP_B:         // 0xf0000003, /*TURE OR FALSE*/
+    199              {
+    200                  bump_state = get_bump_state();
+    201                  self_test_result = (bump_state == BUMP_FRONT_CENTER )?1:0;
+    202                  break;
+    203              }
+    204              case CMD_CLIFF_L:        // 0xf0000004, /*TURE OR FALSE*/
+    205              {
+    206                  self_test_result = robot_is_near_hazard(CLIFF_LEFT);
+    207                  break;
+    208              }
+    209              case CMD_CLIFF_R:        // 0xf0000005, /*TURE OR FALSE*/
+    210              {
+    211                  self_test_result = robot_is_near_hazard(CLIFF_RIGHT);
+    212                  break;
+    213              }
+    214              case CMD_CLIFF_FL:       // 0xf0000006, /*TURE OR FALSE*/
+    215              {
+    216                  self_test_result = robot_is_near_hazard(CLIFF_FRONTLEFT);
+    217                  break;
+    218              }
+    219              case CMD_CLIFF_FR:       // 0xf0000007, /*TURE OR FALSE*/
+    220              {
+    221                  self_test_result = robot_is_near_hazard(CLIFF_FRONTRIGHT);
+    222                  break;
+    223              }
+    224              case CMD_CLIFF_RL:       // 0xf0000008, /*TURE OR FALSE*/
+    225              {
+    226                  self_test_result = robot_is_near_hazard(CLIFF_REAR_RIGHT);
+    227                  break;
+    228              }
+    229              case CMD_CLIFF_RR:       // 0xf0000009, /*TURE OR FALSE*/
+    230              {
+    231                  self_test_result = robot_is_near_hazard(CLIFF_REAR_LEFT);
+    232                  break;
+    233              }
+    234              case CMD_LT_L:           // 0xf000000a, /*TURE OR FALSE*/
+    235              {
+    236                  self_test_result = robot_is_near_wall(LT_LEFT);
+    237                  break;
+    238              }
+    239              case CMD_LT_R:           // 0xf000000b, /*TURE OR FALSE*/
+    240              {
+    241                  self_test_result = robot_is_near_wall(LT_RIGHT);;
+    242                  break;
+    243              }
+    244              case CMD_LT_CL:          // 0xf000000c, /*TURE OR FALSE*/
+    245              {
+    246                  self_test_result = robot_is_near_wall(LT_CENTERLEFT);
+    247                  break;
+    248              }
+    249              case CMD_LT_CR:          // 0xf000000d, /*TURE OR FALSE*/
+    250              {
+    251                  self_test_result = robot_is_near_wall(LT_CENTERRIGHT);
+    252                  break;
+    253              }
+    254              case CMD_LT_FL:          // 0xf000000e, /*TURE OR FALSE*/
+    255              {
+    256                  self_test_result = robot_is_near_wall(LT_FRONTLEFT);
+    257                  break;
+    258              }
+    259              case CMD_LT_FR:          // 0xf000000f, /*TURE OR FALSE*/
+    260              {
+    261                  self_test_result = robot_is_near_wall(LT_FRONTRIGHT);
+    262                  break;
+    263              }
+    264              case CMD_WHEEL_DROP_L:   // 0xf0000010, /*TURE OR FALSE*/
+    265              {
+    266                  drop_mask = robot_wheel_drop_mask();
+    267                  if(drop_mask & WHEEL_DROP_STATE_LEFT)
+    268                  {
+    269                      self_test_result = 1;
+    270                  }
+    271                  else
+    272                  {
+    273                      self_test_result = 0;
+    274                  }
+    275                  break;
+    276              }
+    277              case CMD_WHEEL_DROP_R:   // 0xf0000011, /*TURE OR FALSE*/
+    278              {
+    279                  drop_mask = robot_wheel_drop_mask();
+    280                  if(drop_mask & WHEEL_DROP_STATE_RIGHT)
+    281                  {
+    282                      self_test_result = 1;
+    283                  }
+    284                  else
+    285                  {
+    286                      self_test_result = 0;
+    287                  }
+    288                  break;
+    289              }
+    290              case CMD_REMOTE:         // 0xf0000012, /*TURE OR FALSE*/
+    291              {
+    292                break;
+    293              }
+    294              case CMD_BUOY_L:         // 0xf0000013, /*TURE OR FALSE*/
+    295              {
+    296                  break;
+    297              }
+    298              case CMD_BUOY_R:         // 0xf0000014, /*TURE OR FALSE*/
+    299              {
+    300                  break;
+    301              }
+    302              case CMD_BUOY_MIDDLE:
+    303                  break;
+    304              case CMD_BAT:            // 0xf0000015, /*BAT ADC VOL*/
+    305              {
+    306                  self_test_result = battery_voltage_average();
+    307                  printf("CMD_BAT=%d\r\n",self_test_result);
+    308                  tmp_value = battery_voltage_average();
+    309                  if((tmp_value >= 3649/*3775*/) && (tmp_value < 3954/*4090*/))
+    310                  {
+    311                      vram_read(0, &tmp_value, 1);
+    312                     if((write_nvram_flag == 0)||(tmp_value != 0x55aa))
+    313                     {
+    314                        write_nvram_flag = 1;
+    315                        tmp_value = 0x55aa;
+    316                        vram_write(0, &tmp_value, 1);
+    317                        tmp_value = battery_voltage_average();
+    318                        vram_write(1, &tmp_value, 1);
+    319                        songplayer_play_id(SONG_ID_BUTTON_CLICK, 0);
+    320          
+    321                     }
+    322                     else
+    323                     {
+    324                        songplayer_play_id(SONG_ID_BUTTON_CLICK, 0);
+    325                     }                           
+    326                  }
+    327                  break;
+    328              }
+    329              case CMD_TEMP:           // 0xf0000016, /*TEMP ADC */
+    330              {
+    331                  self_test_result = get_bat_temp();
+    332                  //self_test_result = battery_temperature_average();
+    333                  break;
+    334              }
+    335              case CMD_JACK_CHARGING:  // 0xf0000017, /*TURE OR FALSE*/
+    336              {
+    337                  self_test_result = charging_jack(); 
+    338                  break;
+    339              }
+    340              case CMD_JACK_CURRENT:   // 0xf0000018, /*CURRENT*/
+    341              {
+    342                  self_test_result = charge_current_get(); 
+    343                  break;
+    344              }
+    345              case CMD_DOCK_CHARGING:  // 0xf0000019, /*TURE OR FALSE*/
+    346              {
+    347                  self_test_result = charging_dock(); 
+    348                  break;
+    349              }
+    350              case CMD_DOCK_CURRENT:   // 0xf000001a, /*CURRENT*/
+    351              {
+    352                  self_test_result = charge_current_get(); 
+    353                  printf("CMD_DOCK_CURRENT=%d\r\n",self_test_result);
+    354                  break;
+    355              }
+    356              case CMD_WHEEL_L_FORWARD:// 0xf000001B, /*CURRENT*/
+    357              {
+    358                  //if(!wheel_test_event)
+    359                  {
+    360                    wheel_test_event = 1;
+    361                    set_motor_vels(0, 200, ACCELERATION_NON_EMERGENCY);
+    362                  }
+    363                  self_test_result = get_adc_chan_val(ADC_CHAN_LEFT_MOTOR_CURRENT);
+    364                  printf("CMD_WHEEL_L_FORWARD=%d\r\n",self_test_result);
+    365                  break;
+    366              }
+    367              case CMD_WHEEL_R_FORWARD:// 0xf000001C, /*CURRENT*/
+    368              {
+    369                  //if(!wheel_test_event)
+    370                  {
+    371                    wheel_test_event = 1;
+    372                    set_motor_vels(200, 0, ACCELERATION_NON_EMERGENCY);
+    373                  }
+    374                  self_test_result = get_adc_chan_val(ADC_CHAN_RIGHT_MOTOR_CURRENT);
+    375                  printf("CMD_WHEEL_R_FORWARD=%d\r\n",self_test_result);
+    376                  break;
+    377              }
+    378              case CMD_WHEEL_L_REV_SPD:// 0xf000001D, /*speed*/
+    379              {
+    380                  //if(!wheel_test_event)
+    381                  {
+    382                    wheel_test_event = 1;
+    383                    set_motor_vels(0, -200, ACCELERATION_NON_EMERGENCY);
+    384                  }
+    385                  self_test_result = 0; 
+    386                  break;
+    387              }
+    388              case CMD_WHEEL_R_REV_SPD:// 0xf000001E, /*speed*/
+    389              {
+    390                  //if(!wheel_test_event)
+    391                  {
+    392                    wheel_test_event = 1;
+    393                    set_motor_vels(-200, 0, ACCELERATION_NON_EMERGENCY);
+    394                  }
+    395                  self_test_result = 0; 
+    396                  break;
+    397              }
+    398              case CMD_MAIN_FORWARD:   // 0xf000001f, /*CURRENT*/
+    399              {
+    400                  if (other_motor_test == 0)
+    401                  {
+    402                    robot_midbrush_vols_set(MAIN_BRUSH_MAX_VOLTAGE);
+    403                    other_motor_test = 1;
+    404                  }
+    405                  self_test_result = get_adc_chan_val(ADC_CHAN_MAIN_BRUSH_CURRENT);
+    406                  printf("CMD_MAIN_FORWARD=%d\r\n",self_test_result);
+    407                  break;
+    408              }
+    409              case CMD_MAIN_REV:       // 0xf0000020, /*CURRENT*/
+    410              {
+    411              	  if (other_motor_test == 0)
+    412              	  {
+    413                    robot_midbrush_vols_set(MAIN_BRUSH_MAX_VOLTAGE);
+    414                    other_motor_test = 1; 
+    415                  }
+    416                  self_test_result = get_adc_chan_val(ADC_CHAN_MAIN_BRUSH_CURRENT);
+    417                  printf("CMD_MAIN_REV=%d\r\n",self_test_result);
+    418                  break;
+    419              }
+    420              case CMD_SIDE_FORWARD:   // 0xf0000021, /*CURRENT*/
+    421              {
+    422                  if (other_motor_test == 0)
+    423                  {
+    424                    robot_sidebrush_vols_set(SIDE_BRUSH_MAX_VOLTAGE);
+    425                    other_motor_test = 1;
+    426                  }
+    427                  self_test_result = get_adc_chan_val(ADC_CHAN_SIDE_BRUSH_CURRENT);
+    428                  printf("CMD_SIDE_FORWARD=%d\r\n",self_test_result);
+    429                  break;
+    430              }
+    431              case CMD_SIDE_REV:       // 0xf0000022, /*CURRENT*/
+    432              {
+    433              	  if (other_motor_test == 0)
+    434              	  {
+    435                    robot_sidebrush_vols_set(SIDE_BRUSH_MAX_VOLTAGE);
+    436                    other_motor_test = 1;
+    437                  }
+    438                  self_test_result = 0; 
+    439                  self_test_result = get_adc_chan_val(ADC_CHAN_SIDE_BRUSH_CURRENT);
+    440                  printf("CMD_SIDE_REV=%d\r\n",self_test_result);
+    441                  break;
+    442              }
+    443              case CMD_VACCUM:         // 0xf0000023, /*CURRENT*/
+    444              {
+    445              	  if (other_motor_test == 0)
+    446              	  {
+    447                    robot_suction_vols_set(VACUUM_NORMAL_VOLTAGE);
+    448                    other_motor_test = 1;
+    449                  }
+    450                  self_test_result = get_adc_chan_val(ADC_CHAN_VAC_CURENT);
+    451                  //printf("CMD_VACCUM=%d\r\n",self_test_result);
+    452                  break;
+    453              }
+    454              case CMD_BINFULL:        // 0xf0000024, /*TURE OR FALSE*/
+    455              {
+    456                  self_test_result = 0; 
+    457                  break;
+    458              }
+    459              case CMD_DEBRIS:         // 0xf0000025, /*TURE OR FALSE*/
+    460              {
+    461                  self_test_result = 0; 
+    462                  break;
+    463              }
+    464              case CMD_OPEN_ALL_LEDS:       // 0xf0000026,
+    465              {
+    466                  self_test_result = 0; 
+    467                  break;
+    468              }
+    469              case CMD_UI_VERSION:      // 0xf0000027,
+    470              {
+    471          
+    472          #ifdef GIT_VER_DEF
+    473                  extern const char * GIT_SUB_VER;
+    474                  printf( "%s \n",GIT_SUB_VER);
+    475          #endif
+    476                  //extern U8 g_software_version;
+    477                  //self_test_result = g_software_version ;
+    478                  break;
+    479              }
+    480              case CMD_WHEEL_SPEED:    // 0xf0000028,
+    481              {
+    482                  self_test_result = 0; 
+    483                  break;
+    484              }
+    485              case CMD_GYRO:           // 0xf0000029,
+    486              {
+    487                self_test_result = gyro_is_ok();
+    488                break;
+    489              }
+    490              case CMD_FLASH_SONG:     // 0xf000002a,
+    491              {
+    492          #if 0
+    493                if (! ui_song_playing )
+    494                {
+    495                  ui_song_playing = 1;
+    496                  songplayer_play_index(UI_MUSIC_ERROR_NOTIFY, FALSE);
+    497                  while ( songplayer_is_playing() );
+    498                  ui_song_playing = 0;
+    499                }
+    500          #endif
+    501                self_test_result = 1; 
+    502                break;
+    503              }
+    504              case CMD_UART:           // 0xf000002b,
+    505              {
+    506                  self_test_result = 0; 
+    507                  break;
+    508              }
+    509              case CMD_LONGTEST:
+    510              {
+    511                  self_test_result = 2;
+    512                  break;
+    513              }
+    514              case CMD_STASIS_TEST:
+    515              {
+    516                  if(!cmd_stasis_test)//第一次进来需要清除
+    517                  {
+    518                    cmd_stasis_test = 1;
+    519                    robot_stasis_test_clear();
+    520                  }
+    521          
+    522                  self_test_result = (robot_stasis_test_get());
+    523                  if(self_test_result > 0)
+    524                  {
+    525                    test_result_dly = timer_ms();
+    526                  }
+    527          
+    528                  if(timer_ms() - test_result_dly > 1000)
+    529                  {
+    530                    robot_stasis_test_clear();
+    531                  }
+    532                  break;
+    533              }
+    534              case CMD_TEST_ALL:
+    535              {
+    536                if(!wheel_test_event)
+    537                {
+    538                    wheel_test_event = 1;
+    539                    //start_motor_test(ALL_TEST,3000);
+    540                }
+    541                 other_motor_test = 1;
+    542                 break;
+    543              }
+    544          
+    545              case CMD_NULL:           // 0xf000002c
+    546              {
+    547                  self_test_result = 0; 
+    548                  break;
+    549              }
+    550              case CMD_MASTER_VERSION:
+    551              {
+    552                  self_test_result = get_main_software_version() ;
+    553              }
+    554              break;
+    555              case CMD_TEST_ALL_IR:
+    556              {
+    557                   ir_test_all_result();
+    558              }
+    559              break;
+    560              case CMD_TEST_BUMP_DROP:
+    561              {
+    562                  self_test_result = 0;
+    563                  bump_state = get_bump_state();
+    564                  self_test_result = self_test_result|(((bump_state & BUMP_FRONT_LEFT)?1:0)<<4);
+    565                  self_test_result = self_test_result|(((bump_state & BUMP_FRONT_RIGHT)?1:0)<<3);
+    566                  self_test_result = self_test_result|(((bump_state & BUMP_FRONT_CENTER)?1:0)<<2);
+    567          
+    568                  drop_mask = robot_wheel_drop_mask();
+    569                  self_test_result = self_test_result|(((drop_mask & WHEEL_DROP_STATE_LEFT)?1:0)<<1);
+    570                  self_test_result = self_test_result|(((drop_mask & WHEEL_DROP_STATE_RIGHT)?1:0)<<0);
+    571                  //printf("TEST_BUMP_DROP=%x\r\n",self_test_result);
+    572          
+    573              }
+    574              break;
+    575              case CMD_TEST_CLIFF_LIGHTTOUCH:
+    576              {
+    577                  self_test_result = 0;
+    578                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_REAR_LEFT)<<11;
+    579                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_LEFT)<<10;
+    580                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_FRONTLEFT)<<9;
+    581                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_FRONTRIGHT)<<8;
+    582                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_RIGHT)<<7;
+    583                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_REAR_RIGHT)<<6;
+    584                  self_test_result = self_test_result|robot_is_near_wall(LT_LEFT)<<5;
+    585                  self_test_result = self_test_result|robot_is_near_wall(LT_CENTERLEFT)<<4;
+    586                  self_test_result = self_test_result|robot_is_near_wall(LT_FRONTLEFT)<<3;
+    587                  self_test_result = self_test_result|robot_is_near_wall(LT_FRONTRIGHT)<<2;
+    588                  self_test_result = self_test_result|robot_is_near_wall(LT_CENTERRIGHT)<<1;
+    589                  self_test_result = self_test_result|robot_is_near_wall(LT_RIGHT)<<0;
+    590                  //printf("TEST_CLIFF_LIGHTTOUCH=%x\r\n",self_test_result);
+    591              }
+    592              break;
+    593              case CMD_TEST_CLIFF_DROP_STASIS:
+    594              {
+    595                  if(!cmd_stasis_test)//第一次进来需要清除
+    596                  {
+    597                    cmd_stasis_test = 1;
+    598                    robot_stasis_test_clear();
+    599                  }
+    600          
+    601                  self_test_result = 0;
+    602                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_LEFT)<<0;
+    603                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_FRONTLEFT)<<1;
+    604                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_FRONTRIGHT)<<2;
+    605                  self_test_result = self_test_result|robot_is_near_hazard(CLIFF_RIGHT)<<3;
+    606          
+    607                  drop_mask = robot_wheel_drop_mask();
+    608                  self_test_result = self_test_result|(((drop_mask & WHEEL_DROP_STATE_LEFT)?1:0)<<4);
+    609                  self_test_result = self_test_result|(((drop_mask & WHEEL_DROP_STATE_RIGHT)?1:0)<<5);
+    610          
+    611                  stasis_state = ((robot_stasis_test_get())<<6);
+    612                  self_test_result = self_test_result|stasis_state;
+    613          
+    614                  if(stasis_state > 0)
+    615                  {
+    616                      test_result_dly = timer_ms();
+    617                  }
+    618          
+    619                  if(timer_ms() - test_result_dly > 1000)
+    620                  {
+    621                    robot_stasis_test_clear();
+    622                  }
+    623              }
+    624              break;
+    625              case CMD_TEST_LIGHTTOUCH_BUMP:
+    626              {
+    627                  self_test_result = 0;
+    628                  bump_state = get_bump_state();
+    629          
+    630                  self_test_result = self_test_result|robot_is_near_wall(LT_LEFT)<<0;
+    631                  self_test_result = self_test_result|robot_is_near_wall(LT_CENTERLEFT)<<1;
+    632                  self_test_result = self_test_result|robot_is_near_wall(LT_FRONTLEFT)<<2;
+    633                  self_test_result = self_test_result|robot_is_near_wall(LT_CENTERRIGHT)<<3;
+    634                  self_test_result = self_test_result|robot_is_near_wall(LT_RIGHT)<<4;
+    635                  self_test_result = self_test_result|(((bump_state & BUMP_FRONT_LEFT)?1:0)<<5);
+    636                  self_test_result = self_test_result|(((bump_state & BUMP_FRONT_RIGHT)?1:0)<<6);
+    637              }
+    638              break;
+    639              case CMD_TEST_WIRELESS:
+    640              {
+    641                   tmp_test_result = 0;
+    642                   tmp_state = (U8)get_ir_test((IR_REMOT_POSITION_E)0);
+    643          
+    644          //         if(tmp_state == VW_BEACON_BYTE)
+    645          //         {
+    646          //            tmp_test_result |= 0x10;
+    647          //         }
+    648          
+    649                   if(tmp_state == RIGHT_BEACON_BYTE)
+    650                   {
+    651                      tmp_test_result |= 0x04;
+    652                   }
+    653                   if(tmp_state == BOTH_BEACONS_BYTE)
+    654                   {
+    655                      tmp_test_result |= 0x02;
+    656                   }
+    657                   if(tmp_state == LEFT_BEACON_BYTE)
+    658                   {
+    659                      tmp_test_result |= 0x01;
+    660                   }
+    661                   if(tmp_test_result > 0)
+    662                   {
+    663                       self_test_result = tmp_test_result;
+    664                       ui_test_last_ts = timer_ms();
+    665                      // printf("self_test_result=%x\r\n",self_test_result);
+    666                   }
+    667                   else
+    668                   {
+    669                       if(timer_elapsed(ui_test_last_ts) > 600)
+    670                       {
+    671                          self_test_result = 0;
+    672                       }
+    673                   }
+    674          
+    675          
+    676              }
+    677              break;
+    678              case CMD_TEST_MOVE_REVERSE:
+    679              {
+    680                  if(!wheel_test_event)
+    681                {
+    682                    wheel_test_event = 1;
+    683          
+    684                    //start_motor_test(ALL_TEST,-3000);
+    685                }
+    686                other_motor_test = 1;
+    687              }
+    688              break;
+    689              case CMD_TEST_ALL_CHARGE_MODE:
+    690              {
+    691                  self_test_result = 0;
+    692                  if(charging_jack())
+    693                  {
+    694                      self_test_result |= 0x40;
+    695                  }
+    696                  if(charging_dock())
+    697                  {
+    698                      self_test_result |= 0x01;
+    699                  }
+    700          
+    701              }
+    702              break;
+    703              default:
+    704                self_test_result = 0; break;
+    705              }
+    706              ui_test_num_last = cmd;
+    707          }
+    708          
+    709          /****************************************************************
+    710          *Function   :  ir_test_result
+    711          *Description:  某个接收头是否接收到信号
+    712          *Input      :  U8 nIrIndex:接收头ID           
+    713          *Output     :  无
+    714          *Return     :  无
+    715          *Others     :  
+    716          ******************************************************************/
+    717          void ir_test_result(U8 nIrIndex)
+    718          {
+    719                U8 ir0 = (U8)get_ir_test((IR_REMOT_POSITION_E)nIrIndex) ;
+    720                printf("ir0:%d,result:%d \n",ir0,self_test_result );
+    721                if ( IS_BEACONS_BYTE(ir0) )
+    722                {
+    723                  self_test_result = 1;
+    724                  ui_test_last_ts = timer_ms();
+    725                }
+    726                else
+    727                {
+    728                    self_test_result = (timer_elapsed(ui_test_last_ts) <= 1000) ;
+    729                }
+    730          }
+    731          
+    732          /****************************************************************
+    733          *Function   :  ir_test_all_result
+    734          *Description:  接收头是否接收到信号
+    735          *Input      :  无           
+    736          *Output     :  无
+    737          *Return     :  无
+    738          *Others     :  
+    739          ******************************************************************/
+    740          void ir_test_all_result(void)
+    741          {
+    742              U8 i;
+    743              U8 tmp_ir_result=0;
+    744              U8 ir0;
+    745              self_test_result = 0;
+    746              for(i=0;i<IR_DECODER_MAX;i++)
+    747              {
+    748                  ir0 = (U8)get_ir_test((IR_REMOT_POSITION_E)i) ;
+    749                  //printf("ir0:%d,result:%d \n",ir0,self_test_result );
+    750                  if ( IS_BEACONS_BYTE(ir0) )
+    751                  {
+    752                      tmp_ir_result = 1;
+    753                      ui_test_last_ts2[i] = timer_ms();
+    754                  }
+    755                  else
+    756                  {
+    757                      tmp_ir_result = (timer_elapsed(ui_test_last_ts2[i]) <= 500);
+    758                      //self_test_result = (timer_elapsed(ui_test_last_ts) <= 1000) ;
+    759                  }
+    760                  self_test_result = ((self_test_result<<1)|tmp_ir_result);
+    761          
+    762              }
+    763             // printf("ir_test_all_result=%x\r\n",self_test_result);
+    764          
+    765          }
+    766          
+    767          /****************************************************************
+    768          *Function   :  get_test_result
+    769          *Description:  获取测试结果
+    770          *Input      :  无           
+    771          *Output     :  无
+    772          *Return     :  1:测试通过 0:测试不通过
+    773          *Others     :  
+    774          ******************************************************************/
+    775          int get_test_result(void)
+    776          {
+    777            S16 left_m=0,left_s=0,right_m = 0,right_s=0;
+    778            switch(ui_test_num_last)
+    779            {
+    780            	case CMD_BAT:
+    781            		if (self_test_result >= CHARGING_CUTOFF_VOLTAGE && self_test_result <= CHARGING_MAXVOL)
+    782            		{
+    783            		  self_test_result = 1;
+    784            		}
+    785            		else
+    786            		{
+    787            		  self_test_result = 0;
+    788            		}  
+    789            		break;
+    790            		
+    791            	case CMD_DOCK_CURRENT:
+    792            		if (self_test_result > 0 && self_test_result <= 1000)
+    793            		{
+    794            		  self_test_result = 1;
+    795            		}
+    796            		else
+    797            		{
+    798            		  self_test_result = 0;
+    799            		} 
+    800            	  break;
+    801            	
+    802            	case CMD_WHEEL_L_FORWARD:
+    803            	case CMD_WHEEL_R_FORWARD:
+    804            		if (self_test_result > 0 && self_test_result <= 1000)
+    805            		{
+    806            		  self_test_result = 1;
+    807            		}
+    808            		else
+    809            		{
+    810            		  self_test_result = 0;
+    811            		} 
+    812            	  break;
+    813            	  
+    814            	case CMD_MAIN_FORWARD:  
+    815            	case CMD_MAIN_REV:
+    816            		if (self_test_result > 0 && self_test_result <= 1000)
+    817            		{
+    818            		  self_test_result = 1;
+    819            		}
+    820            		else
+    821            		{
+    822            		  self_test_result = 0;
+    823            		} 
+    824            	  break;
+    825            	  
+    826            	case CMD_SIDE_FORWARD:  
+    827            	case CMD_SIDE_REV:
+    828            		if (self_test_result > 0 && self_test_result <= 1000)
+    829            		{
+    830            		  self_test_result = 1;
+    831            		}
+    832            		else
+    833            		{
+    834            		  self_test_result = 0;
+    835            		} 
+    836            	  break;
+    837            	      	
+    838              case CMD_WHEEL_L_REV_SPD:// 0xf000001D, /*speed*/
+    839              {
+    840                get_motor_speeds(&left_m,&right_m);
+    841                get_commanded_speeds(&left_s,&right_s);
+    842                printf("left_m:%d,right_m:%d",left_m,right_m);
+    843                printf("left_s:%d,right_s:%d\r\n",left_s,right_s);      
+    844                printf("CMD_WHEEL_L_REV_SPD:%d\r\n",abs(left_m - left_s));
+    845                self_test_result = abs(left_m - left_s)*100/abs(left_s) > 5 ? 0:1;
+    846              }
+    847              break;
+    848              case CMD_WHEEL_R_REV_SPD:// 0xf000001E, /*speed*/
+    849              {
+    850                get_motor_speeds(&left_m,&right_m);
+    851                get_commanded_speeds(&left_s,&right_s);
+    852                printf("left_m:%d,right_m:%d",left_m,right_m);
+    853                printf("left_s:%d,right_s:%d\r\n",left_s,right_s);
+    854                printf("CMD_WHEEL_R_REV_SPD:%d\r\n",abs(left_m - left_s));
+    855                self_test_result = abs(left_m - left_s)*100/abs(left_s) > 5 ? 0:1;      
+    856              }
+    857              break;
+    858            case CMD_REMOTE:         // 0xf0000012, /*TURE OR FALSE*/
+    859              {
+    860                ir_test_result(0);
+    861              }
+    862                   break;
+    863            case CMD_BUOY_L:
+    864              ir_test_result(1);
+    865              break;
+    866            case CMD_BUOY_R:
+    867              ir_test_result(2);
+    868              break;
+    869            case CMD_BUOY_MIDDLE:
+    870               ir_test_result(3);
+    871              break;
+    872            }
+    873            return self_test_result;
+    874          }
+    875          
+    876          /****************************************************************
+    877          *Function   :  set_adjust_adc_value_to_system
+    878          *Description:  回写电压校准的参数到系统
+    879          *Input      :  无           
+    880          *Output     :  无
+    881          *Return     :  无
+    882          *Others     :  
+    883          ******************************************************************/
+    884          void set_adjust_adc_value_to_system(void)
+    885          {
+    886              uint32_t tmp_value=0;
+    887              
+    888              vram_read(0, &tmp_value, 1);
+    889              if(tmp_value == 0x55aa)
+    890              {
+    891                  vram_read(1, &tmp_value, 1);
+    892                  printf("set adc value:%d\r\n",tmp_value);
+    893                  robot_set_adc_adjust((uint16_t)tmp_value);
+    894              }
+    895              
+    896          }
+    897          
+    898          /****************************************************************
+    899          *Function   :  self_test_routine
+    900          *Description:  处理测试模式
+    901          *Input      :  无           
+    902          *Output     :  无
+    903          *Return     :  无
+    904          *Others     :  
+    905          ******************************************************************/
+    906          void self_test_routine(void)
+    907          {
+    908            if (ui_test_cmd != CMD_TEST_WAIT)
+    909            {
+    910              handle_test_cmd(ui_test_cmd);
+    911            }
+    912          }
+    913          
+
+   Maximum stack usage in bytes:
+
+   .cstack Function
+   ------- --------
+       8   get_bat_temp
+         8   -> __aeabi_f2iz
+         8   -> battery_temperature_get
+      32   get_test_result
+        32   -- Indirect call
+        32   -> abs
+        32   -> get_commanded_speeds
+        32   -> get_motor_speeds
+        32   -> ir_test_result
+      24   handle_test_cmd
+        24   -- Indirect call
+        24   -> battery_voltage_average
+        24   -> charge_current_get
+        24   -> charging_dock
+        24   -> charging_jack
+        24   -> get_adc_chan_val
+        24   -> get_bat_temp
+        24   -> get_bump_state
+        24   -> get_ir_test
+        24   -> get_main_software_version
+        24   -> gyro_is_ok
+        24   -> ir_test_all_result
+        24   -> robot_is_cliff
+        24   -> robot_is_lighttouch
+        24   -> robot_midbrush_vols_set
+        24   -> robot_sidebrush_vols_set
+        24   -> robot_stasis_test_clear
+        24   -> robot_stasis_test_get
+        24   -> robot_suction_vols_set
+        24   -> robot_wheel_drop_mask
+        24   -> set_motor_vels
+        24   -> songplayer_play_id
+        24   -> timer_elapsed
+        24   -> timer_ms
+        24   -> vram_read
+        24   -> vram_write
+      24   ir_test_all_result
+        24   -> get_ir_test
+        24   -> timer_elapsed
+        24   -> timer_ms
+      16   ir_test_result
+        16   -- Indirect call
+        16   -> get_ir_test
+        16   -> timer_elapsed
+        16   -> timer_ms
+      16   robot_bump_mask
+        16   -- Indirect call
+      16   robot_wheel_drop_mask
+        16   -- Indirect call
+       0   self_test_routine
+         0   -> handle_test_cmd
+       8   set_adjust_adc_value_to_system
+         8   -- Indirect call
+         8   -> robot_set_adc_adjust
+         8   -> vram_read
+
+
+   Section sizes:
+
+   Bytes  Function/Label
+   -----  --------------
+       4  ??DataTable21
+       4  ??DataTable21_1
+       4  ??DataTable21_2
+       6  ??Subroutine11_0
+      12  ?Subroutine0
+      12  ?Subroutine1
+      12  ?Subroutine10
+      12  ?Subroutine2
+       8  ?Subroutine3
+       6  ?Subroutine4
+       6  ?Subroutine5
+      12  ?Subroutine6
+      16  ?Subroutine7
+      16  ?Subroutine8
+      14  ?Subroutine9
+      16  ?_0
+      24  ?_1
+      24  ?_10
+      28  ?_11
+      28  ?_12
+      20  ?_13
+      28  ?_2
+      28  ?_3
+      24  ?_4
+      20  ?_5
+      24  ?_6
+      20  ?_7
+      20  ?_8
+      24  ?_9
+      44  bump_state
+          wheel_test_event
+          other_motor_test
+          cmd_stasis_test
+          write_nvram_flag
+          ui_test_num_last
+          self_test_result
+          ui_test_last_ts
+          test_result_dly
+          ui_test_last_ts2
+      50  get_bat_temp
+     262  get_test_result
+    1436  handle_test_cmd
+      76  ir_test_all_result
+      72  ir_test_result
+      36  robot_bump_mask
+      32  robot_wheel_drop_mask
+      14  self_test_routine
+      58  set_adjust_adc_value_to_system
+       4  stasis_state
+      20  temp_list
+      60  test_item_table
+
+ 
+    48 bytes in section .bss
+    60 bytes in section .data
+ 2 528 bytes in section .text
+ 
+ 2 528 bytes of CODE memory
+   108 bytes of DATA memory
+
+Errors: none
+Warnings: none

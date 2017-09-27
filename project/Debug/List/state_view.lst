@@ -1,0 +1,256 @@
+###############################################################################
+#
+# IAR ANSI C/C++ Compiler V7.30.4.8167/W32 for ARM        23/Sep/2017  15:46:33
+# Copyright 1999-2014 IAR Systems AB.
+#
+#    Cpu mode     =  thumb
+#    Endian       =  little
+#    Source file  =  F:\海尔\新版+8k解码+预约\src\state_view\state_view.c
+#    Command line =  
+#        F:\海尔\新版+8k解码+预约\src\state_view\state_view.c -lcN
+#        F:\海尔\新版+8k解码+预约\project\Debug\List\ --diag_error PE223 -o
+#        F:\海尔\新版+8k解码+预约\project\Debug\Obj\ --debug --endian=little
+#        --cpu=Cortex-M3 -e --fpu=None --dlib_config "D:\Program Files
+#        (x86)\IAR Systems\Embedded Workbench
+#        7.0\arm\INC\c\DLib_Config_Normal.h" --preinclude
+#        F:\海尔\新版+8k解码+预约\project\..\lib\syscall_api.h -I
+#        F:\海尔\新版+8k解码+预约\project\..\includes\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\includes\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\lib\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\local_process\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\cfg\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\dock\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\guardrail\ -Ohz
+#    List file    =  F:\海尔\新版+8k解码+预约\project\Debug\List\state_view.lst
+#    Object file  =  F:\海尔\新版+8k解码+预约\project\Debug\Obj\state_view.o
+#
+###############################################################################
+
+F:\海尔\新版+8k解码+预约\src\state_view\state_view.c
+      1          #include <ui-config.h>
+      2          #include "ui-commands.h"
+      3          #include "am_date_base.h"
+      4          #include "time.h"
+      5          #include  <am_config_macro.h>
+      6          #include "am_key.h"
+      7          #include "act.h"
+      8          #include "local_key_check.h"
+      9          #include "remote.h"
+     10          #include "display.h"
+     11          #include "ui-song-player.h"
+     12          #include "syscall_api.h"
+     13          #include "wireless/ARF2496K.H"
+     14          #include "sensor/sensor.h"
+     15          #include "motor/motor.h"
+     16          #include "monitor/robot_batter.h"
+     17          #include "ui-manager/exception.h"
+     18          #include "am_device.h"
+     19          #include "state_view.h"
+     20          
+     21          #define STATE_VIEW 1
+     22          
+     23          #define LT_VIEW 0
+     24          
+     25          union{
+     26              float f[4];
+     27              short i16[8];
+     28              unsigned int u32[4];
+     29              unsigned char u8[16];
+     30          }uni;
+     31          
+     32          U16 my_time=0;
+     33          
+     34          void view_main_task(void)
+     35          {
+     36          #if STATE_VIEW
+     37                static sys_state_info p,old_p;
+     38                static UI_STATE_E s,old_s;
+     39                int veiw_flag=0;
+     40                U8 i=4;
+     41                
+     42                my_time++;      
+     43                s = get_ui_state(); 
+     44                sys_info_get(SYS_STATE_INFO, (long)(&p));
+     45                
+     46                uni.u32[0] = 0x10aa55aa;
+     47                uni.u8[i++] = p.robot_state;
+     48                uni.u8[i++] = p.charging_state;
+     49                
+     50                uni.u8[i++] = p.dock_state;
+     51                uni.u8[i++] = p.sound_state;
+     52                uni.u8[i++] = p.flush_state;
+     53                uni.u8[i++] = p.switch_state;
+     54                
+     55                uni.u8[i++] = p.pause_id;
+     56                uni.u8[i++] = p.bin_full;
+     57                uni.u8[i++] = s;
+     58                uni.u8[i++] = 0;
+     59                
+     60                veiw_flag=0;
+     61                if(p.robot_state!=old_p.robot_state)          veiw_flag =1;
+     62                if(p.charging_state!=old_p.charging_state)    veiw_flag =1;
+     63                if(p.dock_state!=old_p.dock_state)            veiw_flag =1;
+     64                if(p.sound_state!=old_p.sound_state)          veiw_flag =1;
+     65                if(p.flush_state!=old_p.flush_state)          veiw_flag =1;
+     66                if(p.switch_state!=old_p.switch_state)        veiw_flag =1;
+     67                if(p.pause_id!=old_p.pause_id)                veiw_flag =1;
+     68                if(p.bin_full!=old_p.bin_full)                veiw_flag =1;
+     69                if(s!=old_s)                                  veiw_flag =1;
+     70          
+     71                if(veiw_flag)
+     72                {
+     73                    uni.i16[7] = my_time;
+     74                    write(uart_ui,uni.u8,16);          
+     75                    old_p.robot_state = p.robot_state;
+     76                    old_p.charging_state = p.charging_state;
+     77                    old_p.dock_state = p.dock_state;
+     78                    old_p.sound_state = p.sound_state;
+     79                    old_p.flush_state = p.flush_state;
+     80                    old_p.switch_state = p.switch_state;
+     81                    old_p.pause_id = p.pause_id;
+     82                    old_p.bin_full= p.bin_full;
+     83                    old_s = s;
+     84                }
+     85          
+     86          #endif
+     87          }
+     88          
+     89          void view_msg(U8 msg)
+     90          {
+     91          #if STATE_VIEW
+     92          
+     93              uni.u32[0] = 0x11aa55aa;
+     94              uni.u8[4] = msg; 
+     95              uni.u8[5] = 0;
+     96              uni.i16[3] = my_time;
+     97              write(uart_ui,uni.u8,8);
+     98          
+     99          #endif
+    100          }
+    101          
+    102          void view_LT_sensor(s16 p8,s16 p9,s16 p10,s16 p11,s16 p12,s16 p13)
+    103          {
+    104          #if LT_VIEW
+    105              U8  i=4;
+    106              uni.u32[0] = 0x12aa55aa;
+    107              
+    108              uni.u8[i++] =  p8>>5;
+    109              uni.u8[i++] =  p9>>5;
+    110              uni.u8[i++] =  p10>>5;
+    111              uni.u8[i++] =  p11>>5;
+    112              uni.u8[i++] =  p12>>5;
+    113              uni.u8[i++] =  p13>>5;
+    114          
+    115              write(uart_ui,uni.u8,16);          
+    116          #endif
+    117          }
+    118          
+    119          void view_CMD(U32 cmd_id,U8 cmd_action)
+    120          {
+    121          #if STATE_VIEW
+    122          
+    123              uni.u32[0] = 0x13aa55aa;
+    124              uni.u32[1] =  cmd_id;
+    125              uni.u8[8] =  cmd_action;
+    126              uni.u8[9] = 0;
+    127              uni.i16[5] = my_time;
+    128              write(uart_ui,uni.u8,12);
+    129          
+    130          #endif
+    131          }
+    132          
+    133          void view_key(U32 key_val)
+    134          {
+    135          #if STATE_VIEW
+    136              static U32 old_key=0;
+    137              if(old_key!=key_val)
+    138              {
+    139                  uni.u32[0] = 0x14aa55aa;
+    140                  uni.u32[1] = key_val;
+    141                  old_key = key_val;
+    142                  uni.i16[4] = my_time;
+    143                  write(uart_ui,uni.u8,10);
+    144              }
+    145          #endif
+    146          }
+    147          
+    148          
+    149          
+    150          void view_bump(U32 bump)
+    151          {
+    152          #if STATE_VIEW
+    153              static U32 old_bump=0;
+    154              if(old_bump!=bump)
+    155              {
+    156                  uni.u32[0] = 0x15aa55aa;
+    157                  uni.u32[1] = bump;
+    158                  old_bump = bump;
+    159                  uni.i16[4] = my_time;
+    160                  write(uart_ui,uni.u8,10);
+    161              }
+    162          #endif
+    163          }
+    164          
+    165          
+    166          
+    167          
+
+   Maximum stack usage in bytes:
+
+   .cstack Function
+   ------- --------
+       0   view_CMD
+         0   -- Indirect call
+       0   view_LT_sensor
+       0   view_bump
+         0   -- Indirect call
+       0   view_key
+         0   -- Indirect call
+      16   view_main_task
+        16   -- Indirect call
+        16   -> get_ui_state
+        16   -> sys_info_get
+       0   view_msg
+         0   -- Indirect call
+
+
+   Section sizes:
+
+   Bytes  Function/Label
+   -----  --------------
+       4  ??DataTable5
+       4  ??DataTable5_1
+       4  ??DataTable5_2
+       4  ??DataTable5_3
+       4  ??DataTable5_4
+       4  ??DataTable5_5
+       4  ??DataTable5_6
+       4  ??DataTable5_7
+       4  ??DataTable5_8
+       8  ??Subroutine1_0
+       8  ?Subroutine0
+      34  p
+          old_p
+          s
+          old_s
+      28  uni
+          my_time
+          old_key
+          old_bump
+      36  view_CMD
+       2  view_LT_sensor
+      24  view_bump
+      24  view_key
+     226  view_main_task
+      26  view_msg
+
+ 
+  62 bytes in section .bss
+ 390 bytes in section .text
+ 
+ 390 bytes of CODE memory
+  62 bytes of DATA memory
+
+Errors: none
+Warnings: none

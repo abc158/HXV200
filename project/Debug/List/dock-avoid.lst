@@ -1,0 +1,164 @@
+###############################################################################
+#
+# IAR ANSI C/C++ Compiler V7.30.4.8167/W32 for ARM        25/Sep/2017  09:03:50
+# Copyright 1999-2014 IAR Systems AB.
+#
+#    Cpu mode     =  thumb
+#    Endian       =  little
+#    Source file  =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\src\guardrail\dock-avoid.c
+#    Command line =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\src\guardrail\dock-avoid.c -lcN
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\List\ --diag_error
+#        PE223 -o F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\Obj\
+#        --debug --endian=little --cpu=Cortex-M3 -e --fpu=None --dlib_config
+#        "D:\Program Files (x86)\IAR Systems\Embedded Workbench
+#        7.0\arm\INC\c\DLib_Config_Normal.h" --preinclude
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\lib\syscall_api.h -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\includes\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\includes\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\lib\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\local_process\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\cfg\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\dock\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\guardrail\ -Ohz
+#    List file    =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\List\dock-avoid.lst
+#    Object file  =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\Obj\dock-avoid.o
+#
+###############################################################################
+
+F:\海尔\新版+8k解码+预约+去掉多余代码\src\guardrail\dock-avoid.c
+      1          //------------------------------------------------------------------------------
+      2          //  Copyright (C) 2014-2017, Amicro, Inc.
+      3          //  All rights reserved.
+      4          //------------------------------------------------------------------------------
+      5          
+      6          #include "docking-new.h"
+      7          #include "sensor/sensor.h"
+      8          #include "dock-avoid.h"
+      9          #ifdef IR_WIRELESS
+     10          #include "dock_ir_signal.h"
+     11          #include "wireless/arf2496k.h"
+     12          #endif
+     13          
+     14          #define DOCK_AVOID_SIGNAL_TIME_THRD 500
+     15          #define DOCK_AVOID_SIGNAL_INIT_TIME_THRD 10000
+     16          #define DOCK_AVOID_SIGNAL_ACTIVE(time) (timer_elapsed(time) < DOCK_AVOID_SIGNAL_TIME_THRD)
+     17          #define DOCK_AVOID_SIGNAL_INIT_ACTIVE(time) (timer_elapsed(time) < DOCK_AVOID_SIGNAL_INIT_TIME_THRD)
+     18          
+     19          static dock_avoid_data_t dock_avoid_data;
+     20          
+     21          void dock_avoid_get_signals(U8 index, U8 signal)
+     22          {
+     23                  static U8 time_count = 0;
+     24          	dock_config_t *dock_config = NULL;
+     25          
+     26          	dock_config = get_dock_config();
+     27          
+     28          	if ((1 << index) & dock_config->dock_avoid_chan)
+     29          	{
+     30          		if((signal & DOCK_CLOSE_BEACON) == DOCK_CLOSE_BEACON)
+     31          		{
+     32                                  time_count++;
+     33                                  if(time_count > 3)//delay luyanjin
+     34                                  {
+     35                                    time_count=0;
+     36                                    dock_avoid_data.see_avoid_signal_time = timer_ms();
+     37                                  }
+     38          		}
+     39          	}
+     40          
+     41          	if ((1 << index) & dock_config->binocular_see_avoid_chan)
+     42          	{
+     43          		if((signal & DOCK_CLOSE_BEACON == DOCK_CLOSE_BEACON))
+     44          		{
+     45          			dock_avoid_data.binocular_see_avoid_time = timer_ms();
+     46          		}
+     47          	}
+     48          
+     49          	return;
+     50          }
+     51          
+     52          static U32 get_avoid_signal_time(void)
+     53          {
+     54          	return dock_avoid_data.see_avoid_signal_time;
+     55          }
+     56          
+     57          /*min:TRUE,代表正常清扫时，避座行为是否触发；
+     58                FALSE,代表启动清扫时，初始化避座行为时，决策是否触发避障。*/
+     59          BOOLEAN dock_avoid_active(BOOLEAN min)
+     60          {
+     61          	if (min == TRUE)
+     62          	{
+     63              	return DOCK_AVOID_SIGNAL_ACTIVE(get_avoid_signal_time());
+     64          	}
+     65          	else
+     66          	{
+     67          		return DOCK_AVOID_SIGNAL_INIT_ACTIVE(get_avoid_signal_time());
+     68          	}
+     69          }
+     70          
+     71          /* 圆泡接收到的充电座圆泡信息的强度
+     72             避座行为确认是否避座成功 */
+     73          U8 dock_avoid_signal_quality(void)
+     74          {
+     75              U32 elapsed = timer_elapsed(get_avoid_signal_time());
+     76              if (elapsed >= DOCK_AVOID_SIGNAL_TIME_THRD)
+     77              {
+     78                  return 0;
+     79              }
+     80              return 255 - (U8)(elapsed*255/(DOCK_AVOID_SIGNAL_TIME_THRD*3));
+     81          }
+     82          
+     83          /* 双目接收到的充电座圆泡信息的强度
+     84             用于确认充电座在地图中的位置，同时用于避座行为确认是否避座成功 */
+     85          U8 dock_binocular_avoid_signal_quality(void)
+     86          {
+     87              U32 elapsed = timer_elapsed(dock_avoid_data.binocular_see_avoid_time);
+     88              if (elapsed >= DOCK_AVOID_SIGNAL_TIME_THRD)
+     89              {
+     90                  return 0;
+     91              }
+     92              return 255 - (U8)(elapsed*255/(DOCK_AVOID_SIGNAL_TIME_THRD*3));
+     93          }
+
+   Maximum stack usage in bytes:
+
+   .cstack Function
+   ------- --------
+       8   dock_avoid_active
+         8   -> timer_elapsed
+      24   dock_avoid_get_signals
+        24   -> get_dock_config
+        24   -> timer_ms
+       8   dock_avoid_signal_quality
+         8   -> timer_elapsed
+       8   dock_binocular_avoid_signal_quality
+         8   -> timer_elapsed
+
+
+   Section sizes:
+
+   Bytes  Function/Label
+   -----  --------------
+       4  ??DataTable2
+      20  ?Subroutine0
+      38  dock_avoid_active
+      76  dock_avoid_get_signals
+      22  dock_avoid_signal_quality
+      24  dock_binocular_avoid_signal_quality
+      12  time_count
+          dock_avoid_data
+
+ 
+  12 bytes in section .bss
+ 184 bytes in section .text
+ 
+ 184 bytes of CODE memory
+  12 bytes of DATA memory
+
+Errors: none
+Warnings: none

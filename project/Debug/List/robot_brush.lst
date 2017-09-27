@@ -1,0 +1,282 @@
+###############################################################################
+#
+# IAR ANSI C/C++ Compiler V7.30.4.8167/W32 for ARM        23/Sep/2017  15:46:30
+# Copyright 1999-2014 IAR Systems AB.
+#
+#    Cpu mode     =  thumb
+#    Endian       =  little
+#    Source file  =  F:\海尔\新版+8k解码+预约\src\motor\robot_brush.c
+#    Command line =  
+#        F:\海尔\新版+8k解码+预约\src\motor\robot_brush.c -lcN
+#        F:\海尔\新版+8k解码+预约\project\Debug\List\ --diag_error PE223 -o
+#        F:\海尔\新版+8k解码+预约\project\Debug\Obj\ --debug --endian=little
+#        --cpu=Cortex-M3 -e --fpu=None --dlib_config "D:\Program Files
+#        (x86)\IAR Systems\Embedded Workbench
+#        7.0\arm\INC\c\DLib_Config_Normal.h" --preinclude
+#        F:\海尔\新版+8k解码+预约\project\..\lib\syscall_api.h -I
+#        F:\海尔\新版+8k解码+预约\project\..\includes\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\includes\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\lib\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\local_process\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\cfg\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\dock\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\guardrail\ -Ohz
+#    List file    =  
+#        F:\海尔\新版+8k解码+预约\project\Debug\List\robot_brush.lst
+#    Object file  =  F:\海尔\新版+8k解码+预约\project\Debug\Obj\robot_brush.o
+#
+###############################################################################
+
+F:\海尔\新版+8k解码+预约\src\motor\robot_brush.c
+      1          //------------------------------------------------------------------------------
+      2          //  Copyright (C) 2014-2017, Amicro, Inc.
+      3          //  All rights reserved.
+      4          //------------------------------------------------------------------------------
+      5          /*edit by lyy*/
+      6          #include <am_type.h>
+      7          #include <am_tm_api.h>
+      8          #include <syscall_api.h>
+      9          #include "robot_brush.h"
+     10          
+     11          static u8 sidebrush_off = 1;
+     12          static u8 midbrush_off = 1;
+     13          static u16 main_brush_voltage = 0;
+     14          static u16 side_brush_voltage = 0;
+     15          
+     16          extern const IO_PIN_CFG io_table[];
+     17          
+     18          
+     19          /****************************************************************
+     20          *Function   :  update_side_duty
+     21          *Author     :  lyy
+     22          *Date       :  2017.4.20
+     23          *Description:  边刷pwm  update
+     24          *CallBy     :  
+     25          *Input      :  参数
+     26          *              duty： 占空比。  目前硬件不支持正反向。 如果支持，则
+     27          *              通过duty的正负来区分，  0<, 反向   >0, 正向
+     28          *Output     :  无
+     29          *Return     :  无
+     30          *Others     :  
+     31          *History    : //修改历史
+     32              <author>       <time>      <version>           <desc>
+     33              lyy            17.4.28       v1.0         build this function
+     34          ******************************************************************/
+     35          void update_side_duty(int16_t duty)
+     36          {
+     37            if(duty<0)
+     38            {
+     39              sys_set_pwm_out_duty(SIDE_BRUSH_PWM_CHANNEL,duty);
+     40              gpio_set_value( AM_IO_SIDE_BRUSH_DIR , 0) ; 
+     41            }
+     42            else if(duty>0)
+     43            {
+     44              sys_set_pwm_out_duty(SIDE_BRUSH_PWM_CHANNEL,duty);
+     45              gpio_set_value( AM_IO_SIDE_BRUSH_DIR , 1) ;
+     46            }
+     47            else
+     48            {
+     49              sys_set_pwm_out_duty(SIDE_BRUSH_PWM_CHANNEL,0);
+     50              gpio_set_value( AM_IO_SIDE_BRUSH_DIR , 0);         
+     51            }
+     52          }
+     53          
+     54          /****************************************************************
+     55          *Function   :  update_main_duty
+     56          *Author     :  lyy
+     57          *Date       :  2017.4.20
+     58          *Description:  主刷pwm  update
+     59          *CallBy     :  
+     60          *Input      :  参数
+     61          *              duty： 占空比。  目前硬件不支持正反向。 如果支持，则
+     62          *              通过duty的正负来区分，  0<, 反向   >0, 正向
+     63          *Output     :  无
+     64          *Return     :  无
+     65          *Others     :  
+     66          *History    : //修改历史
+     67              <author>       <time>      <version>           <desc>
+     68              lyy            17.4.28       v1.0         build this function
+     69          ******************************************************************/
+     70          void update_main_duty(int16_t duty)
+     71          {
+     72            if(duty>0)
+     73            {
+     74              sys_set_pwm_out_duty(MAIN_BRUSH_PWM_CHANNEL,duty);
+     75              gpio_set_value( AM_IO_MAIN_BRUSH_DIR , 0) ;
+     76            }
+     77            else if(duty<0)
+     78            {
+     79              sys_set_pwm_out_duty(MAIN_BRUSH_PWM_CHANNEL,duty);
+     80              gpio_set_value(AM_IO_MAIN_BRUSH_DIR , 1) ;
+     81            }
+     82            else
+     83            {
+     84              sys_set_pwm_out_duty(MAIN_BRUSH_PWM_CHANNEL,0);
+     85              gpio_set_value( AM_IO_MAIN_BRUSH_DIR , 0) ;      
+     86            }
+     87          }
+     88          
+     89          /****************************************************************
+     90          *Function   :  robot_brush_init
+     91          *Author     :  lyy
+     92          *Date       :  2017.4.20
+     93          *Description:  主边刷pwm初始化
+     94          *CallBy     :  
+     95          *Input      :  无
+     96          *Output     :  无
+     97          *Return     :  无
+     98          *Others     :  
+     99          *History    : //修改历史
+    100              <author>       <time>      <version>           <desc>
+    101              lyy            17.4.28       v1.0         build this function
+    102          ******************************************************************/
+    103          void robot_brush_init(void)
+    104          {
+    105            sidebrush_off = 1;
+    106            midbrush_off = 1;
+    107            main_brush_voltage = 0;
+    108            side_brush_voltage = 0;  
+    109          }
+    110          
+    111          /****************************************************************
+    112          *Function   :  robot_sidebrush_vols_set
+    113          *Author     :  lyy
+    114          *Date       :  2017.4.20
+    115          *Description:  边刷pwm值设置
+    116          *CallBy     :  
+    117          *Input      :  无
+    118          *Output     :  无
+    119          *Return     :  无
+    120          *Others     :  
+    121          *History    : //修改历史
+    122              <author>       <time>      <version>           <desc>
+    123              lyy            17.4.28       v1.0         build this function
+    124          ******************************************************************/
+    125          void robot_sidebrush_vols_set(u16 speed)
+    126          {
+    127            if(speed > 0)
+    128            {
+    129              sidebrush_off = FALSE;
+    130            }
+    131            else
+    132            {
+    133              sidebrush_off = TRUE;
+    134            }
+    135            side_brush_voltage = speed;
+    136            //printf("side=%d \r\n",side_brush_voltage);
+    137          }
+    138          
+    139          /****************************************************************
+    140          *Function   :  robot_midbrush_vols_set
+    141          *Author     :  lyy
+    142          *Date       :  2017.4.20
+    143          *Description:  主刷pwm值设置
+    144          *CallBy     :  
+    145          *Input      :  无
+    146          *Output     :  无
+    147          *Return     :  无
+    148          *Others     :  
+    149          *History    : //修改历史
+    150              <author>       <time>      <version>           <desc>
+    151              lyy            17.4.28       v1.0         build this function
+    152          ******************************************************************/
+    153          void robot_midbrush_vols_set(u16 speed)
+    154          {
+    155            
+    156            if(speed > 0)
+    157            {
+    158              midbrush_off = FALSE;
+    159            }
+    160            else
+    161            {
+    162              midbrush_off = TRUE;
+    163            }
+    164            main_brush_voltage = speed; 
+    165            //printf("main=%d \r\n",main_brush_voltage);
+    166          }
+    167          
+    168          /****************************************************************
+    169          *Function   :  robot_brush_update
+    170          *Author     :  lyy
+    171          *Date       :  2017.4.20
+    172          *Description:  主边刷的pwm更新
+    173          *CallBy     :  
+    174          *Input      :  无
+    175          *Output     :  无
+    176          *Return     :  无
+    177          *Others     :  
+    178          *History    : //修改历史
+    179              <author>       <time>      <version>           <desc>
+    180              lyy            17.4.28       v1.0         build this function
+    181          ******************************************************************/
+    182          void robot_brush_update(void)
+    183          {
+    184              u16 cur_duty = 0;
+    185              if(sidebrush_off == FALSE)
+    186              {
+    187                  cur_duty = calc_cur_duty(side_brush_voltage);
+    188                  update_side_duty(cur_duty);
+    189              }
+    190              else
+    191              {
+    192                  update_side_duty(0);
+    193              }   
+    194              
+    195              if(midbrush_off == FALSE)
+    196              {
+    197                  cur_duty = calc_cur_duty(main_brush_voltage);
+    198                  update_main_duty(cur_duty);
+    199              }
+    200              else
+    201              {
+    202                  update_main_duty(0);
+    203              }      
+    204              
+    205          }
+
+   Maximum stack usage in bytes:
+
+   .cstack Function
+   ------- --------
+       0   robot_brush_init
+       8   robot_brush_update
+         8   -> calc_cur_duty
+         0   -> update_main_duty
+         8   -> update_side_duty
+       0   robot_midbrush_vols_set
+       0   robot_sidebrush_vols_set
+       8   update_main_duty
+         0   -- Indirect call
+         8   -> sys_set_pwm_out_duty
+       8   update_side_duty
+         0   -- Indirect call
+         8   -> sys_set_pwm_out_duty
+
+
+   Section sizes:
+
+   Bytes  Function/Label
+   -----  --------------
+       4  ??DataTable5
+       4  ??DataTable5_1
+      16  robot_brush_init
+      50  robot_brush_update
+      14  robot_midbrush_vols_set
+      14  robot_sidebrush_vols_set
+       6  sidebrush_off
+          midbrush_off
+          main_brush_voltage
+          side_brush_voltage
+      46  update_main_duty
+      44  update_side_duty
+
+ 
+   6 bytes in section .data
+ 192 bytes in section .text
+ 
+ 192 bytes of CODE memory
+   6 bytes of DATA memory
+
+Errors: none
+Warnings: none

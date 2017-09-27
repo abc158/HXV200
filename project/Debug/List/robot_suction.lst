@@ -1,0 +1,336 @@
+###############################################################################
+#
+# IAR ANSI C/C++ Compiler V7.30.4.8167/W32 for ARM        23/Sep/2017  15:46:31
+# Copyright 1999-2014 IAR Systems AB.
+#
+#    Cpu mode     =  thumb
+#    Endian       =  little
+#    Source file  =  F:\海尔\新版+8k解码+预约\src\motor\robot_suction.c
+#    Command line =  
+#        F:\海尔\新版+8k解码+预约\src\motor\robot_suction.c -lcN
+#        F:\海尔\新版+8k解码+预约\project\Debug\List\ --diag_error PE223 -o
+#        F:\海尔\新版+8k解码+预约\project\Debug\Obj\ --debug --endian=little
+#        --cpu=Cortex-M3 -e --fpu=None --dlib_config "D:\Program Files
+#        (x86)\IAR Systems\Embedded Workbench
+#        7.0\arm\INC\c\DLib_Config_Normal.h" --preinclude
+#        F:\海尔\新版+8k解码+预约\project\..\lib\syscall_api.h -I
+#        F:\海尔\新版+8k解码+预约\project\..\includes\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\includes\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\lib\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\local_process\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\cfg\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\dock\ -I
+#        F:\海尔\新版+8k解码+预约\project\..\src\guardrail\ -Ohz
+#    List file    =  
+#        F:\海尔\新版+8k解码+预约\project\Debug\List\robot_suction.lst
+#    Object file  =  F:\海尔\新版+8k解码+预约\project\Debug\Obj\robot_suction.o
+#
+###############################################################################
+
+F:\海尔\新版+8k解码+预约\src\motor\robot_suction.c
+      1          //----------------------------------------------------------------------------
+      2          //  Copyright (C) 2001-2011, Amicro, Inc.
+      3          //  permission of Amicro, Inc.  All rights reserved.
+      4          //----------------------------------------------------------------------------
+      5          /*edit by lyy*/
+      6          #include <am_type.h>
+      7          #include <charge/charge.h>
+      8          #include <am_tm_api.h>
+      9          #include <syscall_api.h>
+     10          #include "robot_suction.h"
+     11          
+     12          #define ROBOT_HAS_VAC_POWER_CONTROL  //if  has vac power 
+     13          
+     14          BOOLEAN suction_off;
+     15          s16   cur_duty;
+     16          s16   pwm_voltage; 
+     17          
+     18          
+     19          /****************************************************************
+     20          *Function   :  get_suction_current
+     21          *Author     :  lyy
+     22          *Date       :  2017.4.20
+     23          *Description:  真空电流的adc值获取
+     24          *CallBy     :  
+     25          *Input      :  参数
+     26          *              无
+     27          *Output     :  无
+     28          *Return     :  返回 adc值
+     29          *Others     :  
+     30          *History    : //修改历史
+     31              <author>       <time>      <version>           <desc>
+     32              lyy            17.4.28       v1.0         build this function
+     33          ******************************************************************/
+     34          u16 get_suction_current(void)
+     35          {
+     36            // need to do....
+     37            return get_adc_chan_val(ADC_CHAN_VAC_CURENT);
+     38          }
+     39          
+     40          /****************************************************************
+     41          *Function   :  update_suction_duty
+     42          *Author     :  lyy
+     43          *Date       :  2017.4.20
+     44          *Description:  pwm值更新到timer
+     45          *CallBy     :  
+     46          *Input      :  参数
+     47          *              duty：占空比
+     48          *Output     :  无
+     49          *Return     :  无
+     50          *Others     :  
+     51          *History    : //修改历史
+     52              <author>       <time>      <version>           <desc>
+     53              lyy            17.4.28       v1.0         build this function
+     54          ******************************************************************/
+     55          void update_suction_duty(int16_t duty)
+     56          {
+     57          #ifdef USE_BLDC_PWM_CONTROL
+     58          static am_uint32 vac_zero_stp=0;
+     59          static am_boolean vac_zero_sig=FALSE;
+     60            if(duty == 0 && ((vac_zero_sig == FALSE && timer_elapsed(vac_zero_stp)>1000) || (vac_zero_sig==TRUE)))
+     61            {
+     62              vac_zero_stp = timer_ms();
+     63              vac_zero_sig = TRUE;
+     64              sys_set_pwm_out_duty(VACUUM_PWM_CHANNEL,duty);
+     65            }
+     66            else
+     67            {
+     68              if(vac_zero_sig == TRUE && timer_elapsed(vac_zero_stp)<5000)
+     69              {
+     70                sys_set_pwm_out_duty(VACUUM_PWM_CHANNEL,1001);
+     71              }
+     72              else
+     73              {
+     74                vac_zero_sig = FALSE;
+     75                sys_set_pwm_out_duty(VACUUM_PWM_CHANNEL,duty);
+     76              }
+     77            }
+     78          #else
+     79              sys_set_pwm_out_duty(VACUUM_PWM_CHANNEL,duty);
+     80            
+     81          #ifdef ROBOT_HAS_VAC_POWER_CONTROL
+     82             gpio_set_value(AM_IO_VAC_POWER, ((duty!=0)?1:0));
+     83          #endif
+     84             
+     85          #endif
+     86          }
+     87          
+     88          /****************************************************************
+     89          *Function   :  robot_is_suction_on
+     90          *Author     :  lyy
+     91          *Date       :  2017.4.20
+     92          *Description:  判断真空是否有pwm输出
+     93          *CallBy     :  
+     94          *Input      :  参数
+     95          *              无
+     96          *Output     :  无
+     97          *Return     :  返回 1:有  0：无
+     98          *Others     :  
+     99          *History    : //修改历史
+    100              <author>       <time>      <version>           <desc>
+    101              lyy            17.4.28       v1.0         build this function
+    102          ******************************************************************/
+    103          BOOLEAN robot_is_suction_on(void)
+    104          {
+    105              return (cur_duty != 0);
+    106          }
+    107          
+    108          /****************************************************************
+    109          *Function   :  robot_suction_ctrl
+    110          *Author     :  lyy
+    111          *Date       :  2017.4.20
+    112          *Description:  使能真空pwm输出
+    113          *CallBy     :  
+    114          *Input      :  参数
+    115          *              en:  1:使能   0：不使能
+    116          *Output     :  无
+    117          *Return     :  无
+    118          *Others     :  
+    119          *History    : //修改历史
+    120              <author>       <time>      <version>           <desc>
+    121              lyy            17.4.28       v1.0         build this function
+    122          ******************************************************************/
+    123          void robot_suction_ctrl(BOOLEAN en)
+    124          {
+    125              suction_off = en;
+    126          }
+    127          
+    128          /****************************************************************
+    129          *Function   :  suction_is_maybe_stall
+    130          *Author     :  lyy
+    131          *Date       :  2017.4.20
+    132          *Description:  判断真空可能被卡住
+    133          *CallBy     :  
+    134          *Input      :  参数
+    135          *              current ： 卡住电流的阈值
+    136          *Output     :  无
+    137          *Return     :  无
+    138          *Others     :  
+    139          *History    : //修改历史
+    140              <author>       <time>      <version>           <desc>
+    141              lyy            17.4.28       v1.0         build this function
+    142          ******************************************************************/
+    143          u8 suction_is_maybe_stall(u16 current)
+    144          {  
+    145              return ((get_suction_current() > current) && (suction_off == 0));
+    146          }
+    147          
+    148          /****************************************************************
+    149          *Function   :  robot_suction_update
+    150          *Author     :  lyy
+    151          *Date       :  2017.4.20
+    152          *Description:  真空pwm 动态更新
+    153          *CallBy     :  
+    154          *Input      :  参数
+    155          *              无
+    156          *Output     :  无
+    157          *Return     :  无
+    158          *Others     :  
+    159          *History    : //修改历史
+    160              <author>       <time>      <version>           <desc>
+    161              lyy            17.4.28       v1.0         build this function
+    162          ******************************************************************/
+    163          void robot_suction_update(void)
+    164          { 
+    165              if(suction_off == FALSE)
+    166              {
+    167                  cur_duty = calc_cur_duty(pwm_voltage);
+    168                  update_suction_duty(cur_duty);
+    169              }
+    170              else
+    171              {
+    172                  update_suction_duty(0);
+    173              }   
+    174          }
+    175          
+    176          
+    177          /****************************************************************
+    178          *Function   :  robot_is_maybe_not_bustbin
+    179          *Author     :  lyy
+    180          *Date       :  2017.4.20
+    181          *Description:  用真空检测垃圾箱
+    182          *CallBy     :  
+    183          *Input      :  参数
+    184          *              无
+    185          *Output     :  无
+    186          *Return     :  返回 1：垃圾箱被拔出，  0：垃圾箱状态正常
+    187          *Others     :  
+    188          *History    : //修改历史
+    189              <author>       <time>      <version>           <desc>
+    190              lyy            17.4.28       v1.0         build this function
+    191          ******************************************************************/
+    192          u8 robot_is_maybe_not_bustbin(void)
+    193          {
+    194            if( (get_suction_current() < 20) && pwm_voltage > 0) //if adc < x and vets > 0
+    195            {
+    196              return 1;
+    197            }
+    198            else
+    199            {
+    200            }
+    201            return 0;
+    202          }
+    203          
+    204          /****************************************************************
+    205          *Function   :  robot_suction_init
+    206          *Author     :  lyy
+    207          *Date       :  2017.4.20
+    208          *Description:  真空变量等等初始化
+    209          *CallBy     :  
+    210          *Input      :  参数
+    211          *              无
+    212          *Output     :  无
+    213          *Return     :  无
+    214          *Others     :  
+    215          *History    : //修改历史
+    216              <author>       <time>      <version>           <desc>
+    217              lyy            17.4.28       v1.0         build this function
+    218          ******************************************************************/
+    219          void robot_suction_init(void)
+    220          {
+    221              suction_off = 1;
+    222              cur_duty = 0;
+    223              pwm_voltage  = 0;
+    224          }
+    225          
+    226          /****************************************************************
+    227          *Function   :  robot_suction_vols_set
+    228          *Author     :  lyy
+    229          *Date       :  2017.4.20
+    230          *Description:  真空pwm设置
+    231          *CallBy     :  
+    232          *Input      :  参数
+    233          *              val：adc值， 已电池电压为参考点，
+    234          *             比如电池电压满伏是16.8 = 3268. 
+    235          *             如果要百分百输出，则adc = 3628.
+    236          *Output     :  无
+    237          *Return     :  无
+    238          *Others     :  
+    239          *History    : //修改历史
+    240              <author>       <time>      <version>           <desc>
+    241              lyy            17.4.28       v1.0         build this function
+    242          ******************************************************************/
+    243          void robot_suction_vols_set(u16 val)
+    244          {
+    245              if(val > 0)
+    246                suction_off = 0;
+    247              else
+    248                suction_off = 1;
+    249              val=BAT_VOL_MAX-val;
+    250              pwm_voltage = val;
+    251              printf("pwm_voltage=%d\r\n",pwm_voltage);
+    252          }
+
+   Maximum stack usage in bytes:
+
+   .cstack Function
+   ------- --------
+       0   get_suction_current
+         0   -> get_adc_chan_val
+       8   robot_is_maybe_not_bustbin
+         8   -> get_adc_chan_val
+       0   robot_is_suction_on
+       0   robot_suction_ctrl
+       0   robot_suction_init
+       8   robot_suction_update
+         8   -> calc_cur_duty
+         0   -> update_suction_duty
+       0   robot_suction_vols_set
+         0   -- Indirect call
+       8   suction_is_maybe_stall
+         8   -> get_adc_chan_val
+       8   update_suction_duty
+         0   -- Indirect call
+         8   -> sys_set_pwm_out_duty
+
+
+   Section sizes:
+
+   Bytes  Function/Label
+   -----  --------------
+       4  ??DataTable8
+       4  ??DataTable8_1
+      20  ?_0
+       6  get_suction_current
+      30  robot_is_maybe_not_bustbin
+      14  robot_is_suction_on
+       6  robot_suction_ctrl
+      14  robot_suction_init
+      32  robot_suction_update
+      32  robot_suction_vols_set
+      30  suction_is_maybe_stall
+       6  suction_off
+          cur_duty
+          pwm_voltage
+      32  update_suction_duty
+
+ 
+   6 bytes in section .bss
+ 224 bytes in section .text
+ 
+ 224 bytes of CODE memory
+   6 bytes of DATA memory
+
+Errors: none
+Warnings: none

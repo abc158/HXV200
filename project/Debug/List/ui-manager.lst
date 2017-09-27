@@ -1,0 +1,231 @@
+###############################################################################
+#
+# IAR ANSI C/C++ Compiler V7.30.4.8167/W32 for ARM        25/Sep/2017  09:03:51
+# Copyright 1999-2014 IAR Systems AB.
+#
+#    Cpu mode     =  thumb
+#    Endian       =  little
+#    Source file  =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\src\ui-manager\ui-manager.c
+#    Command line =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\src\ui-manager\ui-manager.c -lcN
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\List\ --diag_error
+#        PE223 -o F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\Obj\
+#        --debug --endian=little --cpu=Cortex-M3 -e --fpu=None --dlib_config
+#        "D:\Program Files (x86)\IAR Systems\Embedded Workbench
+#        7.0\arm\INC\c\DLib_Config_Normal.h" --preinclude
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\lib\syscall_api.h -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\includes\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\includes\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\lib\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\local_process\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\cfg\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\dock\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\guardrail\ -Ohz
+#    List file    =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\List\ui-manager.lst
+#    Object file  =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\Obj\ui-manager.o
+#
+###############################################################################
+
+F:\海尔\新版+8k解码+预约+去掉多余代码\src\ui-manager\ui-manager.c
+      1          //------------------------------------------------------------------------------
+      2          //  Copyright (C) 2014-2017, Amicro, Inc.
+      3          //  All rights reserved.
+      4          //------------------------------------------------------------------------------
+      5          #include "ui-manager.h"
+      6          #include "ui-song-player.h"
+      7          #include "ui-msg-handler.h"
+      8          #include "syscall_api.h"
+      9          #include "docking-new.h"
+     10          #include "dock-avoid.h"
+     11          #include "virtual-wall.h"
+     12          #include "sensor/sensor.h"
+     13          #include "charge/charge.h"
+     14          #include "am_uart_api.h"
+     15          #include "am_exti_cfg.h"
+     16          #include "am_spi_cfg.h"
+     17          #include "am_tm_api.h"
+     18          #include "motor/robot_suction.h"
+     19          #include "motor/robot_brush.h"
+     20          #include "monitor/robot_batter.h"
+     21          #include "ui-test_cmd_handle.h"
+     22          #include "monitor/robot_univrsal_wheel.h"
+     23          //from ui-config.h
+     24          extern void ui_config_init(void);
+     25          extern void set_ui_config_update_callback(ui_config_update_func_t func);
+     26          extern ui_config_t* get_ui_config(void);
+     27          extern void ui_config_update(void);
+     28          extern void ui_put_map_point_info(uint16_t x, uint16_t y, uint8_t type, uint16_t direction);
+     29          
+     30          static int ui_manager_init(void);     //initial
+     31          static int ui_manager_deinit(void);  //deinitial
+     32          
+     33          static ui_config_t* ui_manager_get_config(void);
+     34          static int ui_manager_put_massage(int msg_id, int arg, void* data);
+     35          static int ui_manager_put_error_info(int errno, int arg);
+     36          static int ui_manager_clear_error_info(void);
+     37          
+     38          static int ui_manager_put_sensor_data (int sensor_type, int index, void* data);
+     39          static int ui_manager_put_real_map_point (int x, int y, int type, int angel);
+     40          static int ui_manager_quit_song(void);
+     41          
+     42          /*下面結構體函數指針必須有對應實體函數賦值，那怕函數是空實現lyy*/
+     43          const static ui_manager_t ui_manager = {
+     44            .init = ui_manager_init,
+     45            .deinit = ui_manager_deinit,
+     46            .get_config = ui_manager_get_config,
+     47            .put_massage = ui_manager_put_massage,
+     48            .put_error_info = ui_manager_put_error_info,
+     49            .clear_error_info = ui_manager_clear_error_info,
+     50            .put_sensor_data = ui_manager_put_sensor_data,
+     51            .put_real_map_point = ui_manager_put_real_map_point,
+     52            .quit_song = ui_manager_quit_song,
+     53            .dock_new_init = dock_new_init,
+     54            .dock_new_start = dock_new_start,
+     55            .dock_new_end = dock_new_end,
+     56            .set_dock_new_end = set_dock_new_end,
+     57            .set_lt_enable    = set_lighttouch_enable,
+     58            .set_cliff_enable = set_cliff_enable,
+     59            .robot_is_cliff  = robot_is_cliff,
+     60            .robot_signal_distance= robot_signal_distance,
+     61            .robot_is_lighttouch =  robot_is_lighttouch,
+     62            .robot_rear_lt_distance = robot_rear_lt_distance,//一般方案没有这组
+     63            .charging_init     = charging_init,
+     64            .process_charging  = process_charging,
+     65            .quit_charging     = quit_charging,
+     66            .charging_state    = charging_state_get,
+     67            .sys_tm_cfg        = sys_tm_cfg,
+     68            .sys_tm_close      = sys_tm_close,
+     69            .sys_set_pwm_out_duty = sys_set_pwm_out_duty,
+     70            .sys_uart_cfg = sys_uart_cfg,
+     71            .sys_uart_close = sys_uart_close,
+     72            .exit_wakeup_cfg = exit_wakeup_cfg,
+     73            .wakeup_pin_cfg  = wakeup_pin_cfg,
+     74            .sys_spi_cfg     = sys_spi_cfg,
+     75            .sys_spi_close   = sys_spi_close,
+     76            .robot_suction_set   =  robot_suction_vols_set,
+     77            .robot_sidebrush_set =  robot_sidebrush_vols_set,
+     78            .robot_midbrush_set  =  robot_midbrush_vols_set,
+     79            .avoid_active = dock_avoid_active,
+     80            .avoid_signal_quality = dock_avoid_signal_quality,
+     81            .binocular_avoid_signal_quality = dock_binocular_avoid_signal_quality,
+     82            .battery_is_low                 = battery_is_low,
+     83            .virtual_wall_active            = virtual_wall_active,
+     84            .get_bump_state      = robot_bump_mask ,
+     85            .get_wheelDrop_state = robot_wheel_drop_mask,
+     86            .turn_off_touch_bump = turn_off_touch_bump,
+     87            .turn_on_touch_bump  = turn_on_touch_bump,
+     88            .touch_bump_run      = touch_bump_run,
+     89            .universal_wheel_monitor = universal_wheel_monitor,
+     90            .universal_wheel_count   = universal_wheel_count,
+     91            .robot_universal_wheel_init = robot_universal_wheel_init,
+     92            .wall_follow_callback = wall_follow_callback, //默认用sdk内部的wallfollow
+     93            .wall_follow_start    = wall_follow_start,//默认用sdk内部的wallfollow
+     94            .wall_follow_stop     = wall_follow_stop,  //默认用sdk内部的wallfollow
+     95            .set_cliff_threshold  = set_cliff_threshold,
+     96            .reset_cliff_threshold= reset_cliff_threshold,
+     97            .charging_jack      = charging_jack,
+     98            .charging_dock      = charging_dock, 
+     99            .convert_to_voltage = convert_to_voltage,
+    100            .convert_to_current = convert_to_current,
+    101          };
+    102          
+    103          const ui_manager_t* get_ui_manager(void)
+    104          {
+    105            return &ui_manager;
+    106          }
+    107          
+    108          static int ui_manager_init(void)
+    109          {
+    110            ui_config_init();
+    111            return 0;
+    112          }
+    113          static int ui_manager_deinit(void)
+    114          {
+    115            return 0;
+    116          }
+    117          
+    118          static  ui_config_t* ui_manager_get_config(void)
+    119          {
+    120            return (ui_config_t*)get_ui_config();
+    121          }
+    122          
+    123          
+    124          static int ui_manager_put_massage(int msg_id, int arg, void* data)
+    125          {
+    126            return ui_msg_handle((UiMsgType)msg_id, arg, data);
+    127          }
+    128          
+    129          static int ui_manager_put_error_info(int errno, int arg)
+    130          {
+    131            return 0;//system_error_handle(errno, arg);
+    132          }
+    133          
+    134          static int ui_manager_clear_error_info(void)
+    135          {
+    136            return 0;
+    137          }
+    138          
+    139          static int ui_manager_put_sensor_data (int sensor_type, int index, void* data)
+    140          {
+    141            return 0;
+    142          }
+    143          
+    144          
+    145          static int ui_manager_put_real_map_point (int x, int y, int type, int angel)
+    146          {
+    147             ui_put_map_point_info(x,y,type,angel); 
+    148             return 0;
+    149          }
+    150          
+    151          static int ui_manager_quit_song(void)
+    152          {
+    153            return 0;
+    154          }
+
+   Maximum stack usage in bytes:
+
+   .cstack Function
+   ------- --------
+       0   get_ui_manager
+       0   ui_manager_clear_error_info
+       0   ui_manager_deinit
+       0   ui_manager_get_config
+         0   -> get_ui_config
+       8   ui_manager_init
+         8   -> ui_config_init
+       0   ui_manager_put_error_info
+       0   ui_manager_put_massage
+         0   -> ui_msg_handle
+       8   ui_manager_put_real_map_point
+         8   -> ui_put_map_point_info
+       0   ui_manager_put_sensor_data
+       0   ui_manager_quit_song
+
+
+   Section sizes:
+
+   Bytes  Function/Label
+   -----  --------------
+       6  get_ui_manager
+     244  ui_manager
+       4  ui_manager_clear_error_info
+       4  ui_manager_deinit
+       4  ui_manager_get_config
+      10  ui_manager_init
+       4  ui_manager_put_error_info
+       6  ui_manager_put_massage
+      18  ui_manager_put_real_map_point
+       4  ui_manager_put_sensor_data
+       4  ui_manager_quit_song
+
+ 
+ 308 bytes in section .text
+ 
+ 308 bytes of CODE memory
+
+Errors: none
+Warnings: none

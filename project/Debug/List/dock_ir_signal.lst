@@ -1,0 +1,599 @@
+###############################################################################
+#
+# IAR ANSI C/C++ Compiler V7.30.4.8167/W32 for ARM        25/Sep/2017  09:03:50
+# Copyright 1999-2014 IAR Systems AB.
+#
+#    Cpu mode     =  thumb
+#    Endian       =  little
+#    Source file  =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\src\dock\dock_ir_signal.c
+#    Command line =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\src\dock\dock_ir_signal.c -lcN
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\List\ --diag_error
+#        PE223 -o F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\Obj\
+#        --debug --endian=little --cpu=Cortex-M3 -e --fpu=None --dlib_config
+#        "D:\Program Files (x86)\IAR Systems\Embedded Workbench
+#        7.0\arm\INC\c\DLib_Config_Normal.h" --preinclude
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\lib\syscall_api.h -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\includes\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\includes\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\lib\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\local_process\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\cfg\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\dock\ -I
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\..\src\guardrail\ -Ohz
+#    List file    =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\List\dock_ir_signal.lst
+#    Object file  =  
+#        F:\海尔\新版+8k解码+预约+去掉多余代码\project\Debug\Obj\dock_ir_signal.o
+#
+###############################################################################
+
+F:\海尔\新版+8k解码+预约+去掉多余代码\src\dock\dock_ir_signal.c
+      1          //------------------------------------------------------------------------------
+      2          //  Copyright (C) 2014-2017, Amicro, Inc.
+      3          //  All rights reserved.
+      4          //------------------------------------------------------------------------------
+      5          #include "stdio.h"
+      6          #include "stdlib.h"
+      7          #include "string.h"
+      8          #include "am_type.h"
+      9          #include "am_robot_type.h"
+     10          #include "syscall_api.h"
+     11          #include "am_tm_api.h"
+     12          #include "docking-new.h"
+     13          #include "dock_ir_signal.h"
+     14          
+     15          #ifdef IR_WIRELESS
+     16          extern void sys_set_pwm_out_duty(s16 channel , s16 Dutyfactor);
+     17          void ir_send_task_config(bool cleaning_dock_mode);
+     18          
+     19          bool  close_yuanpao_ir=FALSE;
+     20          bool  has_close_yuanpao_ir=FALSE;////还没关闭
+     21          bool  yuanpao_ir_pre_state=FALSE;
+     22          bool  close_yuanpao_ir_pre=FALSE;
+     23          
+     24          bool  close_center_ir=FALSE;
+     25          bool  has_close_center_ir=FALSE;////还没关闭
+     26          bool  center_ir_pre_state=FALSE;
+     27          bool  close_center_ir_pre=FALSE;
+     28          
+     29          
+     30          bool  strong_week=TRUE;
+     31          bool  center_pre_strong_week=TRUE;
+     32          
+     33          bool  ir_send_state=FALSE;
+     34          bool  ir_send_pre_state=FALSE;
+     35          bool  yuanpao_strong_week=TRUE;
+     36          bool  yuanpao_pre_strong_week=TRUE;
+     37          bool  ir_signal_config_finished=FALSE;
+     38          
+     39          bool  ir_sending_mode=TRUE;//TURE: cleaning mode  FALSE: docking mode
+     40          static u8 ir_time_ms_tick;
+     41          static u8 ir_send_flag=0;
+     42          extern void system_set_pwm_out_duty(s16 channel , s16 Dutyfactor);
+     43          void ir_signal_off(void);
+     44          
+     45          void  set_ir_sending_state(bool finish);
+     46          bool  get_ir_sending_state(void);
+     47          void  set_ir_sending_pre_state(bool finish);
+     48          bool  get_ir_sending_pre_state(void);
+     49          void  set_yuanpao_pre_strong_week_signal(bool close);
+     50          bool get_yuanpao_pre_strong_week_signal(void);
+     51          bool  get_center_pre_strong_week_signal(void);
+     52          void  set_center_pre_strong_week_signal(bool close);
+     53          void ir_send_dynamic_config(bool close_yuanpao, bool close_center, bool yuanpao_strong, bool center_strong);
+     54          void restore_pre_ir_send_config(void);
+     55          void set_ir_signal_config_finished(bool finish);
+     56          bool get_ir_signal_config_finished(void );
+     57          #define IR_SEND_TIME 50
+     58          
+     59          
+     60          void set_ir_signal_config_finished(bool finish)
+     61          {
+     62            ir_signal_config_finished=finish;
+     63          }
+     64          bool get_ir_signal_config_finished(void)
+     65          {
+     66            return ir_signal_config_finished;
+     67          }
+     68          
+     69          
+     70          void  set_ir_sending_state(bool finish)
+     71          {
+     72            set_ir_sending_pre_state(ir_send_state);
+     73            ir_send_state=finish;
+     74          }
+     75          bool  get_ir_sending_state(void)
+     76          {
+     77            return ir_send_state;
+     78          }
+     79          
+     80          void  set_ir_sending_pre_state(bool finish)
+     81          {
+     82            ir_send_pre_state=finish;
+     83          }
+     84          bool  get_ir_sending_pre_state(void)
+     85          {
+     86            return ir_send_pre_state;
+     87          }
+     88          
+     89          void  set_ir_sending_mode(bool close)
+     90          {
+     91            ir_sending_mode=close;
+     92          }
+     93          bool  get_ir_sending_mode(void)
+     94          {
+     95            return ir_sending_mode;
+     96          }
+     97          
+     98          void  set_yuanpao_on_pre_stat(bool close)
+     99          {
+    100            yuanpao_ir_pre_state=close;
+    101          }
+    102          bool  get_yuanpao_on_pre_stat(void)
+    103          {
+    104            return yuanpao_ir_pre_state;
+    105          }
+    106          bool  get_yuanpao_on_current_stat(void)
+    107          {
+    108            return close_yuanpao_ir;
+    109          }
+    110          
+    111          void  set_yuanpao_pre_strong_week_signal(bool close)
+    112          {
+    113            yuanpao_pre_strong_week=close;
+    114          }
+    115          
+    116          bool get_yuanpao_strong_week_signal(void)
+    117          {
+    118            return yuanpao_strong_week;
+    119          }
+    120          bool get_yuanpao_pre_strong_week_signal(void)
+    121          {
+    122            return yuanpao_pre_strong_week;
+    123          }
+    124          
+    125          void  set_center_on_pre_stat(bool close)
+    126          {
+    127            center_ir_pre_state=close;
+    128          }
+    129          bool  get_center_on_pre_stat(void)
+    130          {
+    131            return center_ir_pre_state;
+    132          }
+    133          bool  get_center_on_current_stat(void)
+    134          {
+    135            return close_center_ir;
+    136          }
+    137          
+    138          bool get_center_strong_week_signal(void)
+    139          {
+    140            return strong_week;
+    141          }
+    142          bool  get_center_pre_strong_week_signal(void)
+    143          {
+    144            return center_pre_strong_week;
+    145          }
+    146          
+    147          
+    148          
+    149          
+    150          void hou1_ir_send_on()
+    151          {
+    152            sys_set_pwm_out_duty(HOU1_IR_SEND_PWM_CHANNEL,135);
+    153          }
+    154          void hou1_ir_send_off()
+    155          {
+    156            sys_set_pwm_out_duty(HOU1_IR_SEND_PWM_CHANNEL,0);
+    157          }
+    158          void hou2_ir_send_on()
+    159          {
+    160            sys_set_pwm_out_duty(HOU2_IR_SEND_PWM_CHANNEL,135);
+    161          }
+    162          void hou2_ir_send_off()
+    163          {
+    164            sys_set_pwm_out_duty(HOU2_IR_SEND_PWM_CHANNEL,0);
+    165          }
+    166          void qian1_ir_send_on()
+    167          {
+    168            sys_set_pwm_out_duty(QIAN1_IR_SEND_PWM_CHANNEL,135);
+    169          }
+    170          void qian1_ir_send_off()
+    171          {
+    172            sys_set_pwm_out_duty(QIAN1_IR_SEND_PWM_CHANNEL,0);
+    173          }
+    174            //拉低,关38K维持3ms，bit0
+    175          void qian2_ir_send_on()//弱信号
+    176          {
+    177            sys_set_pwm_out_duty(QIAN2_IR_SEND_PWM_CHANNEL,135);
+    178          }
+    179          void qian2_ir_send_off()//弱信号
+    180          {
+    181            sys_set_pwm_out_duty(QIAN2_IR_SEND_PWM_CHANNEL,0);
+    182          }
+    183          
+    184          void ir_signal_off(void)
+    185          {
+    186            hou1_ir_send_off();
+    187            hou2_ir_send_off();
+    188            qian1_ir_send_off();
+    189            qian2_ir_send_off();
+    190          }
+    191          void yuanpao_ir_signal(void)
+    192          {
+    193            if(get_yuanpao_on_current_stat())
+    194            {
+    195              hou1_ir_send_off();
+    196              hou2_ir_send_off();
+    197              return;
+    198            }
+    199          
+    200            if(get_yuanpao_strong_week_signal()==TRUE)
+    201            {
+    202              hou1_ir_send_on();
+    203              hou2_ir_send_off();
+    204            }
+    205            else
+    206            {
+    207              hou1_ir_send_off();
+    208              hou2_ir_send_on();
+    209            }
+    210          }
+    211          
+    212          void center_ir_signal(void)
+    213          {
+    214            if(get_center_on_current_stat())
+    215            {
+    216              qian1_ir_send_off();
+    217              qian2_ir_send_off();
+    218              return;
+    219            }
+    220          
+    221            if(get_center_strong_week_signal()==TRUE)
+    222            {
+    223              qian1_ir_send_on();
+    224              qian2_ir_send_off();
+    225            }
+    226            else
+    227            {
+    228              qian1_ir_send_off();
+    229              qian2_ir_send_on();
+    230            }
+    231          
+    232          }
+    233          
+    234          
+    235          void ir_signal_send(void)
+    236          {
+    237            if( !get_ir_signal_config_finished( ))
+    238            {
+    239              ir_signal_off();
+    240              clear_dock_wireless_rx_code();
+    241              return ;
+    242            }
+    243            if(ir_send_flag==1)
+    244            {
+    245              if((ir_time_ms_tick-IR_SEND_TIME)==0)
+    246              {
+    247                //拉高，开38K维持2ms,前导码
+    248                // hou1_ir_send_on();
+    249          
+    250                yuanpao_ir_signal();
+    251                center_ir_signal();
+    252          
+    253              }
+    254              else if((ir_time_ms_tick-IR_SEND_TIME)==2)
+    255              {
+    256                //拉低,关38K维持2ms,前导码
+    257                ir_signal_off();
+    258              }
+    259              else if((ir_time_ms_tick-IR_SEND_TIME)==4)
+    260              {
+    261                //拉高，开38K维持1ms，bit0
+    262                //  hou1_ir_send_on();
+    263                yuanpao_ir_signal();
+    264                center_ir_signal();
+    265              }
+    266              else if((ir_time_ms_tick-IR_SEND_TIME)==5)
+    267              {
+    268                //拉低,关38K维持3ms，bit0
+    269                ir_signal_off();
+    270              }
+    271              else if((ir_time_ms_tick-IR_SEND_TIME)==8)
+    272              {
+    273                //拉高，开38K维持1ms，bit1
+    274                // hou1_ir_send_on();
+    275                yuanpao_ir_signal();
+    276                center_ir_signal();
+    277              }
+    278              else if((ir_time_ms_tick-IR_SEND_TIME)==9)
+    279              {
+    280                //拉低,关38K维持3ms，bit1
+    281                ir_signal_off();
+    282              }
+    283              else if((ir_time_ms_tick-IR_SEND_TIME)==12)
+    284              {
+    285                //拉高，开38K维持1ms，bit2
+    286                // hou1_ir_send_on();
+    287                yuanpao_ir_signal();
+    288                center_ir_signal();
+    289              }
+    290              else if((ir_time_ms_tick-IR_SEND_TIME)==13)
+    291              {
+    292                //拉低,关38K维持3ms，bit2
+    293                ir_signal_off();
+    294              }
+    295              else if((ir_time_ms_tick-IR_SEND_TIME)==16)
+    296              {
+    297                //拉高，开38K维持1ms，bit3
+    298                // hou1_ir_send_on();
+    299                yuanpao_ir_signal();
+    300                center_ir_signal();
+    301              }
+    302              else if((ir_time_ms_tick-IR_SEND_TIME)==17)
+    303              {
+    304                //拉低,关38K维持3ms，bit3
+    305                ir_signal_off();
+    306              }
+    307              else if((ir_time_ms_tick-IR_SEND_TIME)==20)
+    308              {
+    309                //拉高，开38K维持1ms，bit4
+    310                //hou1_ir_send_on();
+    311                yuanpao_ir_signal();
+    312                center_ir_signal();
+    313              }
+    314              else if((ir_time_ms_tick-IR_SEND_TIME)==21)
+    315              {
+    316                //拉低,关38K维持3ms，bit4
+    317                ir_signal_off();
+    318              }
+    319              else if((ir_time_ms_tick-IR_SEND_TIME)==24)
+    320              {
+    321                //拉高，开38K维持1ms，bit5
+    322                //hou1_ir_send_on();
+    323                yuanpao_ir_signal();
+    324                center_ir_signal();
+    325              }
+    326              else if((ir_time_ms_tick-IR_SEND_TIME)==25)
+    327              {
+    328                //拉低,关38K维持3ms，bit5
+    329                ir_signal_off();
+    330              }
+    331          
+    332              else if((ir_time_ms_tick-IR_SEND_TIME)==28)
+    333              {
+    334                //拉高，开38K维持1ms，bit6
+    335                // hou1_ir_send_on();
+    336                yuanpao_ir_signal();
+    337                center_ir_signal();
+    338              }
+    339              else if((ir_time_ms_tick-IR_SEND_TIME)==29)
+    340              {
+    341                //拉低,关38K维持3ms，bit6
+    342                ir_signal_off();
+    343              }
+    344              else if((ir_time_ms_tick-IR_SEND_TIME)==32)
+    345              {
+    346                //拉高，开38K维持1ms，bit7
+    347                //hou1_ir_send_on();
+    348                yuanpao_ir_signal();
+    349                center_ir_signal();
+    350              }
+    351              else if((ir_time_ms_tick-IR_SEND_TIME)==33)
+    352              {
+    353                //拉低,关38K维持3ms，bit7
+    354                ir_signal_off();
+    355              }
+    356              else if((ir_time_ms_tick-IR_SEND_TIME)==34)
+    357              {
+    358                //拉高，开38K维持1ms，bit7
+    359                // hou1_ir_send_on();
+    360                yuanpao_ir_signal();
+    361                center_ir_signal();
+    362                ir_time_ms_tick=0;
+    363              }
+    364              ir_send_flag=0;
+    365            }
+    366            else
+    367            {
+    368              ir_signal_off();
+    369            }
+    370          }
+    371          
+    372          void  close_yuanpao_on(bool close)
+    373          {
+    374            set_ir_signal_config_finished(FALSE);
+    375            set_yuanpao_on_pre_stat(close_yuanpao_ir);
+    376            close_yuanpao_ir=close;
+    377          }
+    378          
+    379          bool has_yuanpao_off(void)
+    380          {
+    381            return has_close_yuanpao_ir;
+    382          }
+    383          void set_has_yuanpao_off(bool close)
+    384          {
+    385            has_close_yuanpao_ir=close;
+    386          }
+    387          
+    388          void  close_center_on(bool close)
+    389          {
+    390            set_ir_signal_config_finished(FALSE);
+    391            set_yuanpao_on_pre_stat(close_center_ir);
+    392            close_center_ir=close;
+    393          }
+    394          bool has_center_off(void)
+    395          {
+    396            return has_close_center_ir;
+    397          }
+    398          void set_has_center_off(bool close)
+    399          {
+    400            has_close_center_ir=close;
+    401          }
+    402          
+    403          void  set_center_pre_strong_week_signal(bool close)
+    404          {
+    405            center_pre_strong_week=close;
+    406          }
+    407          void  set_center_strong_week_signal(bool close)
+    408          {
+    409            set_ir_signal_config_finished(FALSE);
+    410            set_center_pre_strong_week_signal(strong_week);
+    411            strong_week=close;
+    412          }
+    413          
+    414          void  set_yuanpao_strong_week_signal(bool close)
+    415          {
+    416           set_ir_signal_config_finished(FALSE);
+    417            set_yuanpao_pre_strong_week_signal(yuanpao_strong_week);
+    418            yuanpao_strong_week=close;
+    419          }
+    420          
+    421          void ir_send_task_config(bool cleaning_dock_mode)
+    422          {
+    423              printf("ir_send_task_config\r\n");
+    424          
+    425            set_ir_signal_config_finished(FALSE);
+    426            set_ir_sending_mode(cleaning_dock_mode);
+    427            if(cleaning_dock_mode==TRUE)//cleaning mode
+    428            {
+    429              close_yuanpao_on(FALSE);
+    430              close_center_on(TRUE);
+    431              set_yuanpao_strong_week_signal(FALSE);
+    432              set_center_strong_week_signal(FALSE);
+    433          
+    434            }
+    435            else//docking mode
+    436            {
+    437              close_yuanpao_on(FALSE);
+    438              close_center_on(FALSE);
+    439            set_yuanpao_strong_week_signal(TRUE);
+    440             set_center_strong_week_signal(TRUE);
+    441            }
+    442          }
+    443          
+    444          
+    445          void restore_pre_ir_send_config(void)
+    446          {
+    447            set_ir_signal_config_finished(FALSE);
+    448            close_yuanpao_on(get_yuanpao_on_pre_stat( ));
+    449            close_center_on(get_center_on_pre_stat( ));
+    450            set_yuanpao_strong_week_signal(get_yuanpao_pre_strong_week_signal());
+    451            set_center_strong_week_signal(get_center_pre_strong_week_signal());
+    452          }
+    453          
+    454          
+    455          void ir_send_dynamic_config(bool close_yuanpao, bool close_center, bool yuanpao_strong, bool center_strong)
+    456          {
+    457            set_ir_signal_config_finished(FALSE);
+    458            close_yuanpao_on(close_yuanpao);
+    459            close_center_on(close_center);
+    460            set_yuanpao_strong_week_signal(yuanpao_strong);
+    461            set_center_strong_week_signal(center_strong);
+    462          }
+    463          
+    464          
+    465          void ir_send_task_config_test(void)
+    466          {
+    467            set_ir_signal_config_finished(FALSE);
+    468            set_ir_sending_mode(FALSE);
+    469          
+    470            close_yuanpao_on(FALSE);
+    471            close_center_on(TRUE);
+    472            set_yuanpao_strong_week_signal(FALSE);
+    473            set_center_strong_week_signal(FALSE);
+    474          
+    475          }
+    476          
+    477          static u8 ir_send_cnt=0;
+    478          static u8 ir_send_stat_cnt=0;
+    479          
+    480          void ir_send(void)
+    481          {
+    482          
+    483            //static u8 flag=0;
+    484            static bool tmp;
+    485          
+    486            if(ir_send_cnt>4)
+    487            {
+    488              ir_send_cnt=0;
+    489          
+    490              if(get_ir_sending_mode()==TRUE)//cleaning
+    491              {
+    492                tmp = get_yuanpao_strong_week_signal()==TRUE ?  FALSE: TRUE;
+    493                set_yuanpao_strong_week_signal(tmp);
+    494              }
+    495            }
+    496          
+    497            if(get_ir_sending_state()!=get_ir_sending_pre_state())
+    498            {
+    499                 ir_send_stat_cnt++;
+    500              if(get_ir_sending_pre_state()==FALSE)
+    501              {
+    502                ir_send_cnt++;
+    503          
+    504          
+    505                if(get_yuanpao_on_pre_stat() !=get_yuanpao_on_current_stat()||\
+    506                  get_center_on_pre_stat() !=get_center_on_current_stat()||\
+    507                    get_yuanpao_pre_strong_week_signal() !=get_yuanpao_strong_week_signal()||\
+    508                      get_center_pre_strong_week_signal() !=get_center_strong_week_signal() )
+    509                {
+    510                  clear_dock_wireless_rx_code();
+    511                }
+    512          
+    513          
+    514          
+    515                if(get_yuanpao_on_current_stat())
+    516                {
+    517                  set_has_yuanpao_off(TRUE);
+    518                }
+    519                else
+    520                {
+    521                  set_has_yuanpao_off(FALSE);
+    522                }
+    523          
+    524                if(get_center_on_current_stat())
+    525                {
+    526                  set_has_center_off(TRUE);
+    527                }
+    528                else
+    529                {
+    530          
+    531                  set_has_center_off(FALSE);
+    532                }
+    533          
+    534                if(ir_send_stat_cnt>4)
+    535                {
+    536                  ir_send_stat_cnt=0;
+    537                set_ir_signal_config_finished(TRUE);
+    538                }
+    539          
+    540              }
+    541            }
+    542          
+    543            ir_time_ms_tick++;
+    544            if(ir_time_ms_tick>=IR_SEND_TIME)
+    545            {
+    546              ir_send_flag=1;
+    547              set_ir_sending_state(TRUE);
+    548            }
+    549            else
+    550            {
+    551              set_ir_sending_state(FALSE);
+    552            }
+    553            ir_signal_send();
+    554            // hou2_ir_send_off();
+    555          }
+    556          #endif
+    557          
+
+
+ 
+
+ 
+
+
+Errors: none
+Warnings: none
