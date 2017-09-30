@@ -11,6 +11,7 @@
 #endif
 #include "monitor/robot_batter.h"
 #include "motor/robot_brush.h"
+
 #define DOCK_NEW_DEBUG
 #ifdef DOCK_NEW_DEBUG
 enum {
@@ -54,6 +55,14 @@ static DockingState docking_state =
 };
 
 static dock_config_t dock_config;
+
+/*BOOLEAN docking_left_right_start_when(void);
+BOOLEAN docking_left_run_when(void);
+BOOLEAN docking_right_run_when(void);
+void docking_find_buoy_start_set(void);
+void docking_find_set_orientation_direction(void);
+void docking_find_set_head_direction(void);
+BOOLEAN docking_ahead_start_when(void); */
 
 #ifdef IR_WIRELESS
 void dock_wireless_rx_code_get(U8 chan, U8 val)
@@ -219,16 +228,19 @@ void docking_bounce_abort_code(void)
 
 	return;
 }
-
+extern bool go_forward_flag;
+extern bool findmiddle_flag;
 DOCK_FN_DECL(docking_bounce)
 {
 	S8 result = 0;
-        uint32_t  start_time;
+       // uint32_t  start_time;
+        go_forward_flag=false;
+        findmiddle_flag=false;
 	dprintf(DEBUG_DOCK_BEHAVIOR, "docking_bounce\r\n");
-        start_time=timer_ms();
+        
 	while((get_bump_state() !=0) || (get_cliff_state() != 0)){};
-
-	DRIVE_GO(-200,FORWARDSPEED,(!charging_detect())||(timer_elapsed(start_time)<500),(CARE_CLIFF),result);
+        //start_time=timer_ms();
+	DRIVE_GO(-200,FORWARDSPEED,TRUE,(CARE_CLIFF),result);
 
 	AM_GO_TO_PLACE(180,DOCKING_TRUN_SLOWEST_SPEED,DOCKING_TRUN_SLOWEST_SPEED,TRUE,CARE_CLIFF,result);
 
@@ -247,8 +259,9 @@ BOOLEAN docking_bounce_start_when(void)
 {
 	if (((get_bump_state() !=0) || (get_cliff_state() != 0)) && \
 		(((recently_near_dock.current_state) && \
-		((recently_center_left_focus.current_state || recently_center_right_focus.current_state)) && \
-		(current_dock_behavior() == DOCKING_SUCCESS))))
+		((recently_center_left_focus.current_state || recently_center_right_focus.current_state)) \
+                //  && (current_dock_behavior() == DOCKING_SUCCESS)
+                  )))
 	{
 		return TRUE;
 	}
@@ -306,7 +319,7 @@ void docking_line_bounce_abort_code(void)
 DOCK_FN_DECL(docking_line_bounce)
 {
 	S8 result = 0;
-
+  
 	dprintf(DEBUG_DOCK_BEHAVIOR, "docking_line_bounce\r\n");
 
 	while((get_cliff_state() != 0) || (get_bump_state() != 0)){};
@@ -819,7 +832,7 @@ DOCK_FN_DECL(docking_line)
                           recently_left_backleft.current_state||recently_right_backright.current_state||\
                           recently_left_midleft.current_state||recently_right_midleft.current_state)
                         {
-                            DRIVE_GO(1000,180, \
+                            DRIVE_GO(1500,220, \
                              TRUE,\
                              (CARE_CLIFF|CARE_BUMP),result);
                         }
@@ -874,14 +887,16 @@ DOCK_FN_DECL(fine_middle)
       findmiddle_flag=true;
       dprintf(DEBUG_DOCK_BEHAVIOR, "fine_middle\r\n");
       //right
-     if(recently_right_right.current_state||recently_right_backright.current_state||recently_left_backright.current_state)
+     if(recently_right_right.current_state||recently_left_backright.current_state||\
+       (recently_right_backright.current_state && recently_left_right.current_state))
       {
         AM_GO_TO_PLACE(-180,DOCKING_TRUN_SLOW_SPEED,\
 		DOCKING_TRUN_SLOW_SPEED,\
                 TRUE,\
                 CARE_CLIFF,result);
       }
-      else if(recently_left_left.current_state||recently_left_backleft.current_state||recently_right_backleft.current_state)
+      else if(recently_left_left.current_state||recently_right_backleft.current_state||\
+        (recently_left_backleft.current_state && recently_right_left.current_state))
       {
         AM_GO_TO_PLACE(180,DOCKING_TRUN_SLOW_SPEED,\
 		DOCKING_TRUN_SLOW_SPEED,TRUE,CARE_CLIFF,result);
@@ -895,13 +910,13 @@ BOOLEAN find_middle_start_when(void)
 {
             
           if(((recently_right_right.current_state && recently_left_right.current_state)||\
-             ( recently_left_backright.current_state&&recently_right_backright.current_state)||\
+             ( recently_left_backright.current_state)||\
               (recently_right_backright.current_state && recently_left_right.current_state)))
           {
             return  TRUE;
           }
           else if (((recently_left_left.current_state && recently_right_left.current_state)||\
-            ( recently_right_backleft.current_state&&recently_left_backleft.current_state)||\
+            ( recently_right_backleft.current_state)||\
               (recently_left_backleft.current_state && recently_right_left.current_state)))  
           {
             return  TRUE;
@@ -947,10 +962,8 @@ void fine_middle_register(void)
 }
 /************************************ FINE MIDDLE ***********************************/
 /************************************ ROLL DOCKING ***********************************/
-#if 1
 extern U8 PY_bump;
 extern U8 LT_bump;
-extern bool avoid_dock_abort_flag;
 static U8 rolling_dock=0;
 static bool roll_docking_abort_flag =false;
 static U8 roll_diretion = AM_RIGHT;
@@ -962,7 +975,7 @@ void roll_docking_abort(void)
 }
 BOOLEAN roll_docking_start_when(void)
 {            
-         if( recently_near_dock_1.current_state&&(!go_forward_flag)&&(!findmiddle_flag)&&\
+         if( recently_near_dock_count.current_state&&(!go_forward_flag)&&(!findmiddle_flag)&&\
            (current_dock_behavior()!=ROLL_DOCKING)&&(last_dock_behavior()!=ROLL_DOCKING)&&\
            (!(recently_left_midleft.current_state&&recently_right_midright.current_state)))
          {            
@@ -994,16 +1007,15 @@ DOCK_FN_DECL(roll_docking)
     last_roll_diretion=roll_diretion;
     set_lighttouch_enable(0);
     turn_on_touch_bump();
+    //平行墙边走用light touch数据进行方向判断
     if((robot_signal_distance(LT_CENTERRIGHT)-robot_signal_distance(LT_CENTERLEFT)>80)&&(!rolling_dock))
     {
-     // printf("111 rolling_dock %d \r\n");
-      roll_diretion = AM_RIGHT;
+      roll_diretion = AM_RIGHT;  //机器在座子右边
       roll_angle_division = 2;
     }
     else if((robot_signal_distance(LT_CENTERRIGHT)-robot_signal_distance(LT_CENTERLEFT)<(-80))&&(!rolling_dock))
     {
-      //printf("222 rolling_dock %d \r\n");
-      roll_diretion = AM_LEFT;
+      roll_diretion = AM_LEFT;   //机器在座子左边
       roll_angle_division =-2;
     }
     rolling_dock=1;
@@ -1039,7 +1051,6 @@ DOCK_FN_DECL(roll_docking)
     }
     else if(recently_follow_midright_force_field.current_state||recently_follow_right_force_field.current_state)
     {
-        printf("in right %d %d \r\n",recently_follow_midright_force_field.current_state,recently_follow_right_force_field.current_state);
         if(recently_follow_midright_force_field.current_state)
         {
             if(recently_right_midleft.current_state||(recently_right_midright.current_state&&\
@@ -1079,26 +1090,22 @@ DOCK_FN_DECL(roll_docking)
           roll_diretion = AM_LEFT;  
           
         }
-       // printf("roll_diretion %d\r\n",roll_diretion);
 
        if(bump_state==BUMP_FRONT_LEFT) 
        {
-              roll_angle_division = -1.2;
-              roll_diretion = AM_RIGHT;
+           roll_angle_division = -1.2;
+           //   roll_diretion = AM_RIGHT;
        }
-       if(bump_state==BUMP_FRONT_RIGHT) 
+       else if(bump_state==BUMP_FRONT_RIGHT) 
        {
-              roll_angle_division = 1.2;
-              roll_diretion = AM_LEFT;  
-       }
-       if(bump_state==BUMP_FRONT_CENTER) 
-       {
-              roll_angle_division = 1;
+           roll_angle_division = 1.2;
+            //  roll_diretion = AM_LEFT;  
        }
        bump_state=BUMP_MASK_NONE;
       // printf("bump_state() %d PY_bump %d LT_bump %d\r\n",get_bump_state(),PY_bump,LT_bump);
        while(get_bump_state()) {};
     }
+    //掉头过程中遇到bump 
     do
     {
       angle=get_gyro_angle();
@@ -1134,11 +1141,11 @@ DOCK_FN_DECL(roll_docking)
 
       if(roll_diretion == AM_LEFT)
       {
-        //绕座过程中没有收到信号绕的角度又超过120°，调整角度继续绕。
-       if((!roll_in_signal)&&(abs(get_gyro_angle()-angle)>135))
+        //绕座过程中没有收到信号绕的角度又超过125，调整角度继续绕。
+       if((!roll_in_signal)&&(abs(get_gyro_angle()-angle)>125))
        {
          roll_no_signal_count++;
-         AM_GO_TO_PLACE(-60,DOCKING_TRUN_SLOWEST_SPEED,\
+         AM_GO_TO_PLACE(-110,DOCKING_TRUN_SLOWEST_SPEED,\
               DOCKING_TRUN_SLOWEST_SPEED,\
               TRUE,\
               CARE_CLIFF,result);
@@ -1172,10 +1179,10 @@ DOCK_FN_DECL(roll_docking)
       else if(roll_diretion == AM_RIGHT)
       {
        
-       if((!roll_in_signal)&&(abs(get_gyro_angle()-angle)>120))
+       if((!roll_in_signal)&&(abs(get_gyro_angle()-angle)>125))
        {
          roll_no_signal_count++;
-         AM_GO_TO_PLACE(60,DOCKING_TRUN_SLOWEST_SPEED,\
+         AM_GO_TO_PLACE(110,DOCKING_TRUN_SLOWEST_SPEED,\
               DOCKING_TRUN_SLOWEST_SPEED,\
               TRUE,\
               CARE_CLIFF,result);
@@ -1201,28 +1208,7 @@ DOCK_FN_DECL(roll_docking)
        
        }
       }
-      if(find_middle_start_when()&&(!(recently_follow_left_force_field.current_state\
-        ||recently_follow_right_force_field.current_state)))
-      {
-        if(roll_diretion == AM_LEFT)
-        {
-                AM_GO_TO_PLACE(180,DOCKING_TRUN_SLOW_SPEED,\
-		DOCKING_TRUN_SLOW_SPEED,\
-                (!(docking_go_forward_run_when()||docking_right_run_when()||docking_left_run_when())),\
-                CARE_CLIFF,result);
-        }
-        else if(roll_diretion == AM_RIGHT)
-        {
-                AM_GO_TO_PLACE(-180,DOCKING_TRUN_SLOW_SPEED,\
-		DOCKING_TRUN_SLOW_SPEED,\
-                (!(docking_go_forward_run_when()||docking_right_run_when()||docking_left_run_when())),\
-                CARE_CLIFF,result);
-        
-        }
-            findmiddle_flag=true;
-            roll_docking_abort();
-      }
-    set_motor_vels(left_motor, right_motor, ACCELERATION_NON_EMERGENCY);
+    set_motor_vels(left_motor, right_motor, ACCELERATION_MAX);
     }while((!get_bump_state())&&(!(recently_left_left.current_state&&recently_right_left.current_state))&&\
       (!(recently_right_right.current_state&&recently_left_right.current_state)));
     bump_state=get_bump_state();
@@ -1278,11 +1264,9 @@ BOOLEAN roll_docking_abort_when(void)
 
 void roll_docking_abort_code(void)
 {
-   roll_docking_abort_flag = TRUE;
    roll_diretion = AM_RIGHT;
    roll_angle_division=2;
    roll_docking_abort_flag =FALSE;
-   roll_docking_abort_flag = FALSE;
    rolling_dock=0;
 	return;
 }
@@ -1302,7 +1286,6 @@ void roll_docking_register(void)
 
 	return;
 }
-#endif
 /************************************ ROLL DOCKING ***********************************/
 /************************************ AVOID　DOCK ***********************************/
 /**
@@ -1311,6 +1294,7 @@ void roll_docking_register(void)
  * 触发条件: 
  * 退出条件: 
  */
+#if 0
 static bool avoid_dock_abort_flag = FALSE;
 void avoid_dock_abort(void)
 {
@@ -1364,6 +1348,7 @@ void avoid_dock_register(void)
 
 	return;
 }
+#endif
 /************************************ AVOID DOCK ***********************************/
 void dock_get_random_count(void)
 {
@@ -1427,6 +1412,7 @@ dock_config_t* dock_new_init(void)
         register_debouncer(&recently_follow_right_force_field);
         register_debouncer(&recently_follow_midleft_force_field);
         register_debouncer(&recently_follow_midright_force_field);
+        register_debouncer(&recently_near_dock_count);
 #if 0
 	register_debouncer(&recently_signal);
 	register_debouncer(&recently_near_dock);

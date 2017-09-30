@@ -38,6 +38,7 @@ extern Debouncer_Data recently_follow_left_force_field;
 extern Debouncer_Data recently_follow_right_force_field;
 extern Debouncer_Data recently_follow_midright_force_field;
 extern Debouncer_Data recently_follow_midleft_force_field;
+extern Debouncer_Data recently_near_dock_count;
 #if 0
 extern Debouncer_Data recently_signal;
 extern Debouncer_Data recently_near_dock;

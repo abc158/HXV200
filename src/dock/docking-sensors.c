@@ -294,7 +294,10 @@ BOOLEAN check_docking_bump(void)
 	else
 		return FALSE;
 }
-
+BOOLEAN check_recently_near_dock(void)
+{
+    return recently_near_dock_1.current_state;
+}
 void set_near_dock_context(BOOLEAN value)
 {
 	if(value)
@@ -332,7 +335,16 @@ Debouncer_Data recently_near_dock = {
 Debouncer_Data recently_near_dock_1 = {
 	.predicate = &check_near_dock_1,
 	.trigger_on = 1,
-	.trigger_off = 20,
+	.trigger_off = 10,
+	.on_count = 0,
+	.off_count = 0,
+	.current_state = FALSE,
+	.set_dock_context = NULL
+};
+Debouncer_Data recently_near_dock_count = {
+	.predicate = &check_recently_near_dock,
+	.trigger_on = 11,
+	.trigger_off = 1,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,
@@ -360,7 +372,7 @@ Debouncer_Data recently_center_right_focus = {
 Debouncer_Data recently_left_left = {
 	.predicate = &check_recently_left_left,
 	.trigger_on = 1,
-	.trigger_off = 20,
+	.trigger_off = 50,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,
@@ -369,7 +381,7 @@ Debouncer_Data recently_left_left = {
 Debouncer_Data recently_right_right = {
 	.predicate = &check_recently_right_right,
 	.trigger_on = 1,
-	.trigger_off = 30,
+	.trigger_off = 50,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,
@@ -416,7 +428,7 @@ Debouncer_Data recently_left_midleft = {
 Debouncer_Data recently_left_backleft = {
 	.predicate = &check_recently_left_backleft,
 	.trigger_on = 1,
-	.trigger_off = 20,
+	.trigger_off = 80,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,
@@ -426,7 +438,7 @@ Debouncer_Data recently_left_backleft = {
 Debouncer_Data recently_right_backright = {
 	.predicate = &check_recently_right_backright,
 	.trigger_on = 1,
-	.trigger_off = 20,
+	.trigger_off = 80,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,
@@ -436,7 +448,7 @@ Debouncer_Data recently_right_backright = {
 Debouncer_Data recently_right_backleft = {
 	.predicate = &check_recently_right_backleft,
 	.trigger_on = 1,
-	.trigger_off = 20,
+	.trigger_off = 80,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,
@@ -446,7 +458,7 @@ Debouncer_Data recently_right_backleft = {
 Debouncer_Data recently_left_backright = {
 	.predicate = &check_recently_left_backright,
 	.trigger_on = 1,
-	.trigger_off = 20,
+	.trigger_off = 80,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,
@@ -455,7 +467,7 @@ Debouncer_Data recently_left_backright = {
 Debouncer_Data recently_left_right = {
 	.predicate = &check_recently_left_right,
 	.trigger_on = 1,
-	.trigger_off = 40,
+	.trigger_off = 50,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,
@@ -465,7 +477,7 @@ Debouncer_Data recently_left_right = {
 Debouncer_Data recently_right_left = {
 	.predicate = &check_recently_right_left,
 	.trigger_on = 1,
-	.trigger_off = 40,
+	.trigger_off = 50,
 	.on_count = 0,
 	.off_count = 0,
 	.current_state = FALSE,

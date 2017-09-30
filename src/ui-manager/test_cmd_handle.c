@@ -87,6 +87,7 @@ WheelDropState robot_wheel_drop_mask(void)
 *Return     :  Åö×²×´Ì¬
 *Others     :  
 ******************************************************************/
+U8 PY_bump;
 BumpState robot_bump_mask(void)
 {
     BumpState mask = BUMP_MASK_NONE;
@@ -109,6 +110,7 @@ BumpState robot_bump_mask(void)
     }
  */   
    // printf("mask=%x\r\n",mask);   
+    PY_bump=mask;
     return mask;
 }
 
