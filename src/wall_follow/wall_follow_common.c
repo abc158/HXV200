@@ -4,21 +4,21 @@
 #include <math.h>
 
 
-//#define USE_WF_MID_CONTROL
-#define MID_THROD 500  //center throd to make robot turn away
+#define USE_WF_MID_CONTROL
+#define MID_THROD 100  //center throd to make robot turn away
 #define MID_PLUS  20
 #define WF_SPEED_VALUE 240           //the speed following wall
 #define WF_SPEED_SIGNAl_SMALL 150    //the speed turn to wall to find the signal
 
-#define IR_MIN_VALUE  90   //A3: 35
-#define IR_MAX_VALUE  800
+#define IR_MIN_VALUE  35   //A3: 35
+#define IR_MAX_VALUE  250
 
 #define PID_INT_MAX_VAL 500
-#define WF_PID_p 0.0015//0.002
-#define WF_PID_i 0.00003//0.00005
-#define WF_PID_d 0.000015//0.00002
+#define WF_PID_p 0.002
+#define WF_PID_i 0.00005
+#define WF_PID_d 0.00002
 
-#define TURN_COUNT_MAX 255  //150    //when no signal, inner speed is 1/5, after this time, speed set to zero, if 255, no such function
+#define TURN_COUNT_MAX 200  //150    //when no signal, inner speed is 1/5, after this time, speed set to zero, if 255, no such function
 
 #define PHYSIC_BUMP_ADAPTER_TARGET_VALUE     1/3  //when detect physic bump, max ir value plus this value
 #define NO_PHYSIC_BUMP_ADAPTER_TARGET_VALUE  5/6  //when detect no physic bump, max ir value plus this value
@@ -29,13 +29,13 @@
 //#define OPEN_CYCLE_WF_PRINT
 
 #ifdef OPEN_DEBUG_PRINT
-  #define AM_WF_DEBUG_PRINT(...)    printk(__VA_ARGS__);
+  #define AM_WF_DEBUG_PRINT(...)    printf(__VA_ARGS__);
 #else
   #define AM_WF_DEBUG_PRINT(...)
 #endif
 
 #ifdef OPEN_CYCLE_WF_PRINT
-  #define AM_WF_CYCLE_DEBUG_PRINT(...)    printk(__VA_ARGS__);
+  #define AM_WF_CYCLE_DEBUG_PRINT(...)    printf(__VA_ARGS__);
 #else
   #define AM_WF_CYCLE_DEBUG_PRINT(...)
 #endif
@@ -191,7 +191,7 @@ void turn_away_wall(s16* left_speed, s16* right_speed)
   float angle_error = gyro_radian_diff_f(wf_g_par.turn_target_angle, get_gyro_radian());
   float angle_abs_error=fabsf(angle_error);
   float speed_val;
-
+//远离墙就转换状态
   if(angle_abs_error<M_PI_F/13)
   {
 	//reach the angle, stop and change status
@@ -200,6 +200,7 @@ void turn_away_wall(s16* left_speed, s16* right_speed)
     WfParames_p->wf_run_state=WF_STAT_FOLLOW; //change the state
     //AM_WF_DEBUG_PRINT("wf s c\r\n");
   }
+//继续远离
   else
   {
 	//turn away from wall
@@ -277,24 +278,25 @@ void follow_wall_run(s16* left_speed, s16* right_speed, ir_sensor_data_t* sensor
 
   if(WfParames_p->contact_side == AM_LEFT)
   {
-    if(sensor_data->ir_left_value < IR_MIN_VALUE)
+    if(sensor_data->ir_left_value < IR_MIN_VALUE)//红外强度小于最小值
     {
       //when the ir sensor value is small, just turn to wall
       *right_speed=WF_SPEED_SIGNAl_SMALL;
-      if(wf_g_par.util & UTIL_CLIFF_MASK)
+      if(wf_g_par.util & UTIL_CLIFF_MASK) //产生cliff
       {   //when cliff and dock avoid, the robot turn slowly
         *left_speed=WF_SPEED_SIGNAl_SMALL/2;
       }
-      else if(wf_g_par.util &  UTIL_DOCK_MASK)
+      else if(wf_g_par.util &  UTIL_DOCK_MASK)//产生避座
       {
     	  *left_speed=WF_SPEED_SIGNAl_SMALL*7/11;
       }
-      else
+      else  //都没有产生
       {
-    	  if(wf_g_par.turn_count<TURN_COUNT_MAX)
+    	  if(wf_g_par.turn_count<TURN_COUNT_MAX)//如果转向计数次数没达到幅度大一点速度快点
     	  {
               *left_speed=WF_SPEED_SIGNAl_SMALL/5;
     	  }
+		  //达到幅度就小一点速度慢一点
     	  else   //delay a time, make robot one wheel stop, more closer to obstacle
     	  {
     		  *right_speed=WF_SPEED_SIGNAl_SMALL*3/4;
@@ -306,11 +308,13 @@ void follow_wall_run(s16* left_speed, s16* right_speed, ir_sensor_data_t* sensor
       wf_g_par.pid_deritive=0;
       wf_g_par.ex_ir_error=0;
       wf_g_par.following_count=FOLLOWING_COUNT_MIN;
-      wf_g_par.turn_count = (wf_g_par.turn_count<253)?(wf_g_par.turn_count+1):253;
+	  //小于设定值之前一直自增
+      wf_g_par.turn_count = (wf_g_par.turn_count<TURN_COUNT_MAX)?(wf_g_par.turn_count+1):TURN_COUNT_MAX;
     }
     else
     {
       //when the signal is larger than threshold, do the pid control
+      //以红外的偏差作为反馈
       ir_error = sensor_data->ir_left_value - wf_g_par.ir_target_value;
 #ifdef USE_WF_MID_CONTROL
       if(sensor_data->ir_mid_left_value>(MID_THROD+wf_g_par.ir_target_value)/2)
@@ -378,7 +382,7 @@ void follow_wall_run(s16* left_speed, s16* right_speed, ir_sensor_data_t* sensor
 
   wf_g_par.ex_ir_error=ir_error;
 }
-
+//延边开始函数传入延边方向，初始化参数结构体
 int wall_follow_start(AM_LeftRight contact_side, WfParames_t* wfp_p)
 {
   WfParames_p=wfp_p;
@@ -387,18 +391,31 @@ int wall_follow_start(AM_LeftRight contact_side, WfParames_t* wfp_p)
         AM_WF_DEBUG_PRINT("wf already run:%d\r\n", WfParames_p->contact_side);
         return 1;
   }
-  WfParames_p->wf_run_state = WF_STAT_FOLLOW;
-  WfParames_p->contact_side=contact_side;
+  //WfParames_p->wf_run_state = WF_STAT_FOLLOW;
+  //wf_g_par.turn_target_angle = get_gyro_radian();
+  
+  WfParames_p->wf_run_state=WF_STAT_TURN;//运行状态-停止、转向、延边三种
+  WfParames_p->contact_side=contact_side;//传入的延边方向
+  if(WfParames_p->contact_side==AM_LEFT)
+  {
+    wf_g_par.turn_target_angle = get_gyro_radian() - M_PI_F/4.3f;//计算转向角度
+  }
+  else  //AM_RIGHT
+  {
+    wf_g_par.turn_target_angle = get_gyro_radian() + M_PI_F/4.3f;
+  }
+  
   wf_g_par.ir_target_value = IR_MIN_VALUE*2;  //set a init value, this variable should be changed during running
   wf_g_par.ir_adapter_max = 0;
+  
   wfp_p->wf_following_sig=FALSE;
   AM_WF_DEBUG_PRINT("app wf s\r\n");
   //when state is not stop, and contact_side is different, what should do?
-#ifdef USE_WF_NOT_CYCLE_PROCESS
+#ifdef USE_WF_NOT_CYCLE_PROCESS  //为结构体分配内存
   if(wf_turn_array_p==NULL)
   {
     wf_turn_array_p = malloc(CYCLE_ARRAY_INDEX_MAX * sizeof(wf_turn_array_t));
-    if(wf_turn_array_p!=NULL)
+    if(wf_turn_array_p != NULL)
     {
       memset(wf_turn_array_p, 0, CYCLE_ARRAY_INDEX_MAX * sizeof(wf_turn_array_t));
     }
@@ -442,14 +459,14 @@ int wall_follow_callback(WfParames_t* wfp_p)
   s16 ir_now_data;
 
   //update sensor data
-  reload_sensor_data(&sensor_data);
+  reload_sensor_data(&sensor_data);  //获取红外数据确定距离墙边距离
 
-  WfParames_p=wfp_p;
+  WfParames_p=wfp_p;    //初始化的参数结构体
 
   //get the adaptive threshold
   if(WfParames_p->contact_side==AM_LEFT)
   {
-	  ir_now_data = sensor_data.ir_left_value;
+	  ir_now_data = sensor_data.ir_left_value;  //墙在左边用左边的红外数据
   }
   else
   {
@@ -457,9 +474,10 @@ int wall_follow_callback(WfParames_t* wfp_p)
   }
   if(wf_g_par.ir_adapter_max<ir_now_data)
   {
-	  wf_g_par.ir_adapter_max = ir_now_data;
+	  wf_g_par.ir_adapter_max = ir_now_data;  //记录过程中红外的最大值
   }
   //physic bump need use small touch
+  //这过程中有bump产生红外阈值小一点
   if(wfp_p->physic_bump==TRUE)
   {
      wf_g_par.ir_target_value = wf_g_par.ir_adapter_max*PHYSIC_BUMP_ADAPTER_TARGET_VALUE;
@@ -468,7 +486,7 @@ int wall_follow_callback(WfParames_t* wfp_p)
   {
     wf_g_par.ir_target_value = wf_g_par.ir_adapter_max*NO_PHYSIC_BUMP_ADAPTER_TARGET_VALUE;
   }
-
+  //阈值不能太小也不能太大
   if(wf_g_par.ir_target_value<IR_MIN_VALUE*1.5)
   {
     wf_g_par.ir_target_value=(s16)(IR_MIN_VALUE*1.5);
@@ -481,8 +499,8 @@ int wall_follow_callback(WfParames_t* wfp_p)
   //process the bump
   if((WfParames_p->robot_bump != 0) && (WfParames_p->cliff_bump == 0))  //cliff has high priority
   {
-    WfParames_p->wf_run_state=WF_STAT_TURN;
-    if(WfParames_p->contact_side==AM_LEFT)
+    WfParames_p->wf_run_state=WF_STAT_TURN;  //状态切回转向
+    if(WfParames_p->contact_side==AM_LEFT)  //如果墙在左边，计算转角
     {
         //Note:it's better change the turn angle by the bump location or touch location
         wf_g_par.turn_target_angle = get_gyro_radian() - M_PI_F/4.3f;
@@ -496,11 +514,11 @@ int wall_follow_callback(WfParames_t* wfp_p)
     //check if robot is in dock region
     //if(in_dock_region())
     //wf_g_par.util |= UTIL_DOCK_MASK;
-
+    //bump产生这时候的红外值太大
     wf_g_par.ir_adapter_max = wf_g_par.ir_adapter_max >> 2;
     wf_g_par.ir_target_value = wf_g_par.ir_target_value >> 2;
     AM_WF_DEBUG_PRINT("app new throd(%d,%d)\r\n", wf_g_par.ir_adapter_max, wf_g_par.ir_target_value);
-    wfp_p->wf_following_sig=FALSE;
+	wfp_p->wf_following_sig=FALSE;
 #ifdef USE_WF_NOT_CYCLE_PROCESS
     in_cycle_go_forward_sig=FALSE;
 #endif
@@ -521,7 +539,7 @@ int wall_follow_callback(WfParames_t* wfp_p)
       wf_g_par.turn_target_angle = get_gyro_radian() + M_PI_F/4.3f;
     }
     AM_WF_DEBUG_PRINT("app wf c(%d,%d)\r\n", (int)(get_gyro_radian()*100), (int)(wf_g_par.turn_target_angle*100));
-    wf_g_par.util |= UTIL_CLIFF_MASK;
+    wf_g_par.util |= UTIL_CLIFF_MASK;  //记耤cliff 的产生
 
     wf_g_par.ir_target_value = wf_g_par.ir_target_value >> 2;
     wf_g_par.ir_adapter_max = wf_g_par.ir_adapter_max>>2;
@@ -546,7 +564,7 @@ int wall_follow_callback(WfParames_t* wfp_p)
         wf_g_par.turn_target_angle = get_gyro_radian() + M_PI_F/2.1f;
       }
       AM_WF_DEBUG_PRINT("wf d(%d,%d)\r\n", (int)(get_gyro_radian()*100), (int)(wf_g_par.turn_target_angle*100));
-      wf_g_par.util |= UTIL_DOCK_MASK;
+      wf_g_par.util |= UTIL_DOCK_MASK;//记录避座的产生
 
       wf_g_par.ir_target_value = wf_g_par.ir_target_value >> 2;
       wf_g_par.ir_adapter_max = wf_g_par.ir_adapter_max>>2;
@@ -557,7 +575,7 @@ int wall_follow_callback(WfParames_t* wfp_p)
 #endif
       return 3;
   }
-
+//执行状态相应的动作
   switch(WfParames_p->wf_run_state)
   {
   case WF_STAT_TURN:
